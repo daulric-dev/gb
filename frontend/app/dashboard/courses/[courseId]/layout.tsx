@@ -196,7 +196,7 @@ export default function CourseLayout({
                 {c.name}
               </h1>
               {c.code && (
-                <p className="font-mono text-sm text-white/85">{c.code}</p>
+                <p className="font-mono text-sm text-white/85" translate="no">{c.code}</p>
               )}
             </div>
             <div className="flex items-center gap-2">

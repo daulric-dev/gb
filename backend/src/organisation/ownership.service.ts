@@ -308,7 +308,7 @@ export class OwnershipService {
       kind: 'school' as const,
       place: school.name?.trim() || 'your school',
       by: labelOf(actor),
-      settingsUrl: `${primaryOrigin()}/dashboard/settings`,
+      settingsUrl: `${primaryOrigin()}/dashboard/settings?tab=school`,
     };
     await this.notify(emailOf(profile), {
       ...base,

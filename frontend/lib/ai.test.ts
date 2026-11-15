@@ -1,6 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { ApiError } from "@/lib/api";
-import { aiErrorMessage, draftAsQuestion, orgDefaultLabel, summaryMarkdown, type QuestionDraft } from "@/lib/ai";
+import {
+  acceptedRubricPicks,
+  aiErrorMessage,
+  batchProgress,
+  draftAsQuestion,
+  draftBadge,
+  formatChars,
+  gradingProblemMessage,
+  orgDefaultLabel,
+  summaryMarkdown,
+  type AiDraftSummary,
+  type AiGradingBatch,
+  type QuestionDraft,
+  type RubricDraftCriterion,
+} from "@/lib/ai";
 import { FALLBACK_FEATURES, resolveFeatures } from "@/lib/features";
 
 describe("AI helpers", () => {
@@ -65,5 +79,61 @@ describe("course builder helpers", () => {
     expect(planResultSummary({ ...base, ok: false, failed: 2, created: { ...base.created, outcomes: 1 } })).toBe(
       "Created 2 modules, 5 items, 1 outcome (unpublished). 2 could not be created: see the report.",
     );
+  });
+});
+
+describe("AI grading drafts", () => {
+  const summary = (over: Partial<AiDraftSummary>): AiDraftSummary => ({
+    studentId: "s1",
+    status: "ready",
+    mode: "score",
+    errorCode: null,
+    error: null,
+    suggestedScore: 14,
+    stale: false,
+    batchId: null,
+    updatedAt: "2026-11-14T00:00:00Z",
+    ...over,
+  });
+
+  test("marks-table badges say what state each draft is in", () => {
+    expect(draftBadge(undefined)).toBeNull();
+    expect(draftBadge(summary({}))).toEqual({ label: "AI draft: 14", tone: "ready" });
+    expect(draftBadge(summary({ stale: true }))?.tone).toBe("muted");
+    expect(draftBadge(summary({ status: "queued" }))?.label).toBe("AI draft queued");
+    expect(draftBadge(summary({ status: "queued", errorCode: "WAITING_FOR_LIMIT" }))?.label).toBe("AI draft waiting");
+    expect(draftBadge(summary({ status: "failed", errorCode: "NOTHING_READABLE" }))).toEqual({ label: "AI: nothing readable", tone: "problem" });
+    expect(draftBadge(summary({ status: "skipped", errorCode: "AI_STUDENT_RESTRICTED" }))?.label).toBe("AI: opted out");
+  });
+
+  test("batch progress counts skipped and cancelled drafts as finished", () => {
+    const b = {
+      counts: { queued: 2, running: 1, ready: 4, failed: 1, skipped: 1, cancelled: 1 },
+    } as AiGradingBatch;
+    expect(batchProgress(b)).toEqual({ done: 7, total: 10, percent: 70 });
+    expect(batchProgress({ counts: { queued: 0, running: 0, ready: 0, failed: 0, skipped: 0, cancelled: 0 } } as AiGradingBatch).percent).toBe(100);
+  });
+
+  test("only accepted criteria reach the rubric form, with the teacher's edited comments", () => {
+    const criteria: RubricDraftCriterion[] = [
+      { criterionId: "c1", title: "A", maxPoints: 10, ratingId: "r1", ratingLabel: "Strong", points: 10, comment: "Good", evidence: [] },
+      { criterionId: "c2", title: "B", maxPoints: 5, ratingId: "r3", ratingLabel: "Clear", points: 5, comment: "Fine", evidence: [] },
+    ];
+    expect(acceptedRubricPicks(criteria, { c1: true }, { c1: " Edited " })).toEqual({
+      c1: { ratingId: "r1", points: 10, comment: "Edited" },
+    });
+    expect(acceptedRubricPicks(criteria, {}, {})).toEqual({});
+  });
+
+  test("problem codes become plain messages for each error state", () => {
+    expect(gradingProblemMessage(null)).toBeNull();
+    expect(gradingProblemMessage("AI_NO_PROVIDER")).toContain("not set up");
+    expect(gradingProblemMessage("AI_STUDENT_FILES_NOT_ALLOWED")).toContain("uploaded files");
+    expect(gradingProblemMessage("AI_STUDENT_RESTRICTED")).toContain("restricts AI");
+    expect(gradingProblemMessage("NOTHING_READABLE")).toContain("could be read");
+    expect(gradingProblemMessage("SOMETHING_ELSE")).toBeNull();
+    expect(aiErrorMessage(new ApiError(403, "Not allowed for files", { code: "AI_STUDENT_FILES_NOT_ALLOWED" }))).toBe("Not allowed for files");
+    expect(formatChars(12300)).toBe("12,300 characters");
+    expect(formatChars(1)).toBe("1 character");
   });
 });

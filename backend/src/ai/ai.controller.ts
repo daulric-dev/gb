@@ -134,6 +134,8 @@ export class SchoolAiController {
     return this.ai.getSchoolSettings(req.user.id);
   }
 
+  // Decides whether students' work and files may leave the platform: step-up.
+  @RequireStepUp()
   @RequirePermission('school', 'update')
   @Put()
   update(@Req() req: Req, @Body() dto: AiSchoolSettingsDto) {

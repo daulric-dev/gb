@@ -1,10 +1,10 @@
 # Backend scripts (`backend/scripts`)
 
-Two kinds of script. `seed-demo`, `smoke` and `student-flow-check` are developer scripts that run against a **local** stack: each talks to the running API over HTTP (as real users, through the cookie session) and also opens its own Prisma client on `DATABASE_URL` for fixtures and clean-up; never point them at a shared or production database. `retention-purge`, `erasure-replay` and `reencrypt-secrets` are operational tools that work on the database and object storage directly (no API needed) and are meant for any deployment. None of them is part of the build or the test suite.
+Two kinds of script. `seed-demo`, `smoke` and `student-flow-check` are developer scripts that run against a **local** stack: each talks to the running API over HTTP (as real users, through the cookie session) and also opens its own Prisma client on `DATABASE_URL` for fixtures and clean-up; never point them at a shared or production database. `retention-purge`, `erasure-replay`, `reencrypt-secrets` and the database setup scripts (`db-prepare`, `db-harden`, `db-release`) are operational tools that work on the database and object storage directly (no API needed) and are meant for any deployment. None of them is part of the build or the test suite.
 
 ## Prerequisites (seed-demo, smoke, student-flow-check)
 
-1. The dev services are up and migrated: `bun run preload` from the repo root (Postgres, Redis, S3, Mailpit, then `prisma migrate deploy`).
+1. The dev services are up and migrated: `bun run preload` from the repo root (Postgres, Redis, S3, Mailpit, then `bun run db:setup`).
 2. `backend/.env` exists (copy `backend/.env.example`) with `DATABASE_URL` and **`ALLOW_DEV_LOGIN=true`**. The scripts sign in through the dev-only `POST /api/auth/dev/code`, which returns a sign-in code instead of mailing it; it answers 404 when `ALLOW_DEV_LOGIN` is off or `NODE_ENV=production`.
 3. The API is running: `bun run start:dev` in `backend/` (or `bun run dev:backend` from the root).
 
@@ -97,6 +97,16 @@ bun run secrets:reencrypt [--skip-erasure-log] [--json]
 ```
 
 Moves the stored secrets off `AUTH_SECRET` onto `DATA_ENCRYPTION_KEY`: re-encrypts every `v1` webhook signing secret, webhook header value and school SSO client secret as `v2`, and re-signs the erasure-log copies in object storage that only verify under the `AUTH_SECRET` key (copies that do not verify at all are left alone). Run it with the **current** `AUTH_SECRET` and the new `DATA_ENCRYPTION_KEY` (the API should already be running with it), then rotate `AUTH_SECRET`. Idempotent; a row changed while it runs is left to its new value. Exits 0 when nothing is left on `AUTH_SECRET`, 1 when some values could not be decrypted or verified (they were already unusable: enter them again), 2 on bad arguments or without `DATA_ENCRYPTION_KEY`. Needs `DATABASE_URL` and (unless `--skip-erasure-log`) `S3_*`. Meant for production. See [src/account](../src/account/README.md).
+
+## `db-prepare.ts`, `db-harden.ts`, `db-release.ts` - database setup
+
+```bash
+bun run db:prepare   # before prisma db push: pg_trgm, legacy bridge for old migrate-built databases
+bun run db:harden    # after push: triggers, CHECKs, expression indexes; then one-off setup steps
+bun run db:release   # production: prepare, prisma db push, harden under a PostgreSQL advisory lock
+```
+
+`bun run db:deploy` (development) is `db:prepare && prisma db push && prisma generate && db:harden`. All are idempotent: on a database that is already set up they change nothing and report every object `unchanged` and every step `already-applied`. Each exits 1 if anything failed (`db:release` then stops before push or before starting the API). Provider-specific work comes from `src/database-setup` (PostgreSQL only so far; other providers log that only application-level enforcement applies). See `prisma/DATABASE_PORTABILITY.md`.
 
 ## See also
 

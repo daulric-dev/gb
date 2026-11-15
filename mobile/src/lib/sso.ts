@@ -2,6 +2,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import { api, ApiError, buildUrl } from "@/lib/api";
+import { mfaTokenFrom } from "@/lib/mfa";
 
 /** Where the API sends the system browser back to (MOBILE_SSO_RETURN_URL). */
 export const SSO_RETURN_URL = "gradebook://sso";
@@ -253,6 +254,8 @@ export function isHandledByAuthSession(code?: string | null): boolean {
 export type SsoResult =
   | { type: "success" }
   | { type: "cancel" }
+  /** An authenticator code is due: go to the two-step screen with this token. */
+  | { type: "mfa"; token: string }
   | { type: "error"; message: string };
 
 function parseReturnUrl(url: string): { code?: string; error?: string } {
@@ -315,6 +318,8 @@ export async function signInWithSso(
       await redeemSsoCode(code);
       return { type: "success" };
     } catch (err) {
+      const mfaToken = mfaTokenFrom(err);
+      if (mfaToken) return { type: "mfa", token: mfaToken };
       return {
         type: "error",
         message:

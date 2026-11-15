@@ -218,11 +218,12 @@ export class FeatureService {
 
     const school = await this.prisma.school.findUnique({
       where: { id: schoolId },
-      select: { disabled_features: true },
+      select: { disabled_feature_rows: { select: { feature: true } } },
     });
     if (!school) throw new NotFoundException('School not found');
 
-    const off = new Set(school.disabled_features.filter(isFeatureKey));
+    const currentDisabled = school.disabled_feature_rows.map(({ feature }) => feature);
+    const off = new Set(currentDisabled.filter(isFeatureKey));
     for (const [key, on] of Object.entries(changes)) {
       if (on) off.delete(key as FeatureKey);
       else off.add(key as FeatureKey);
@@ -230,21 +231,23 @@ export class FeatureService {
     const before = Object.fromEntries(
       Object.keys(changes).map((key) => [
         key,
-        !school.disabled_features.includes(key),
+        !currentDisabled.includes(key),
       ]),
     );
     const after = Object.fromEntries(
       Object.keys(changes).map((key) => [key, changes[key]]),
     );
     await this.prisma.$transaction(async (tx) => {
+      await tx.school_feature_disabled.deleteMany({ where: { school_id: schoolId } });
+      const disabledFeatures = FEATURES.map((f) => f.key).filter((k) => off.has(k));
+      if (disabledFeatures.length > 0) {
+        await tx.school_feature_disabled.createMany({
+          data: disabledFeatures.map((feature) => ({ school_id: schoolId, feature })),
+        });
+      }
       await tx.school.update({
         where: { id: schoolId },
-        data: {
-          disabled_features: FEATURES.map((f) => f.key).filter((k) =>
-            off.has(k),
-          ),
-          updated_at: new Date(),
-        },
+        data: { updated_at: new Date() },
       });
       if (actorId) {
         await this.auditLog?.record(
@@ -286,9 +289,9 @@ export class FeatureService {
     if (Array.isArray(cached)) return cached;
     const school = await this.prisma.school.findUnique({
       where: { id: schoolId },
-      select: { disabled_features: true },
+      select: { disabled_feature_rows: { select: { feature: true } } },
     });
-    const disabled = school?.disabled_features ?? [];
+    const disabled = school?.disabled_feature_rows.map(({ feature }) => feature) ?? [];
     await this.cache.set(key, disabled, FEATURE_TTL);
     return disabled;
   }

@@ -45,6 +45,7 @@ export function ExtensionBadge({
       variant="outline"
       className="mt-1 gap-1 text-xs font-normal"
       title={extension.reason ?? undefined}
+      data-private-label
     >
       <CalendarClock className="size-3" />
       {extendedLabel(extension.dueAt)}
@@ -136,6 +137,7 @@ export function ExtensionActions({
               variant="ghost"
               title="Due date"
               aria-label={`Due date for ${row.name}`}
+              data-private-label
               disabled={working.value}
             />
           }
@@ -160,7 +162,7 @@ export function ExtensionActions({
           if (!v) open.value = false;
         }}
       >
-        <DialogContent>
+        <DialogContent translate="no">
           <DialogHeader>
             <DialogTitle>Extend due date for {row.name}</DialogTitle>
             <DialogDescription>

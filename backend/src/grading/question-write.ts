@@ -8,6 +8,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@/generated/prisma/client';
 import {
   validateQuestion,
+  stringList,
   type OptionInput,
   type QuestionKind,
   type QuestionSettingsInput,
@@ -89,7 +90,7 @@ export function toQuestion(
       : {}),
     scoring: q.partial_credit ? ('partial' as const) : ('all_or_nothing' as const),
     rubricId: q.rubric_id ?? null,
-    fileTypes: q.file_types ?? [],
+    fileTypes: stringList(q.file_types),
     fileMaxMb: q.file_max_mb ?? null,
   };
 }

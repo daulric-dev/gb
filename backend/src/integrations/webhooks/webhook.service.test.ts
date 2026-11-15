@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { X509Certificate } from 'node:crypto';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
@@ -32,7 +32,7 @@ function hookRow(over: Record<string, unknown> = {}) {
     name: 'SIS',
     url: 'https://sis.riverside.edu/hooks',
     secret_enc: encryptWebhookSecret({ schoolId: SCHOOL, webhookId: HOOK }, 'whsec_old'),
-    events: ['grade.recorded'],
+    event_subscriptions: [{ event_type: 'grade.recorded' }],
     enabled: true,
     consecutive_failures: 0,
     disabled_reason: null,
@@ -62,7 +62,11 @@ function setup() {
     where.id === HOOK && where.school_id === SCHOOL ? hookRow() : null,
   );
   tx.school_webhook.create.mockImplementation(async ({ data }: any) =>
-    hookRow({ ...data, headers: data.headers?.create ?? [] }),
+    hookRow({
+      ...data,
+      event_subscriptions: data.event_subscriptions?.create ?? [],
+      headers: data.headers?.create ?? [],
+    }),
   );
   const deliveries = { sendNow: mock(async () => ({ ok: true })) };
   const alerts = { tlsVerificationDisabled: mock(async () => {}) };
@@ -77,7 +81,14 @@ function setup() {
 }
 
 describe('URLs', () => {
-  test('any http(s) URL is accepted, internal addresses included; other schemes and junk are not', () => {
+  const prevAllow = process.env.WEBHOOK_ALLOW_PRIVATE;
+  afterEach(() => {
+    if (prevAllow === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    else process.env.WEBHOOK_ALLOW_PRIVATE = prevAllow;
+  });
+
+  test('with WEBHOOK_ALLOW_PRIVATE=true any http(s) URL is accepted, internal addresses included; other schemes and junk are not', () => {
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
     expect(normaliseWebhookUrl('http://10.0.0.5:8080/hook')).toBe('http://10.0.0.5:8080/hook');
     expect(normaliseWebhookUrl(' https://localhost/x#frag ')).toBe('https://localhost/x');
     expect(normaliseWebhookUrl('http://sis.internal/')).toBe('http://sis.internal/');
@@ -85,9 +96,27 @@ describe('URLs', () => {
       expect(() => normaliseWebhookUrl(bad)).toThrow(BadRequestException);
     }
   });
+
+  test('without it plain http is refused and https is required', () => {
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    expect(() => normaliseWebhookUrl('http://sis.example.com/hook')).toThrow(/https:\/\//);
+    expect(normaliseWebhookUrl('https://sis.example.com/hook')).toBe('https://sis.example.com/hook');
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'false';
+    expect(() => normaliseWebhookUrl('http://sis.example.com/hook')).toThrow(BadRequestException);
+  });
 });
 
 describe('WebhookService', () => {
+  // Several cases use internal http URLs, as a trusted self-hosted install may.
+  const prevAllow = process.env.WEBHOOK_ALLOW_PRIVATE;
+  beforeEach(() => {
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
+  });
+  afterEach(() => {
+    if (prevAllow === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    else process.env.WEBHOOK_ALLOW_PRIVATE = prevAllow;
+  });
+
   test('create stores the secret encrypted, returns it once, expands "*" and audits without the secret', async () => {
     const { service, tx, audit } = setup();
     const { webhook, secret: shown, secretGenerated } = await service.create(
@@ -101,7 +130,7 @@ describe('WebhookService', () => {
     const data = tx.school_webhook.create.mock.calls[0][0].data;
     expect(data.secret_enc).not.toContain(secret);
     expect(decryptWebhookSecret({ schoolId: SCHOOL, webhookId: data.id }, data.secret_enc)).toBe(secret);
-    expect(data.events).toEqual(WEBHOOK_EVENT_KEYS.filter((k) => k !== 'ping'));
+    expect(data.event_subscriptions.create.map((row: any) => row.event_type)).toEqual(WEBHOOK_EVENT_KEYS.filter((k) => k !== 'ping'));
     expect(data.name).toBe('SIS');
     expect(webhook).toMatchObject({ hasSecret: true, insecure: true, enabled: true });
     expect(JSON.stringify(webhook)).not.toContain(secret);
@@ -160,6 +189,20 @@ describe('WebhookService', () => {
     });
     expect(audit().map((e: any) => e.action)).toEqual(['webhook_updated', 'webhook_enabled']);
     expect(audit()[0].changes.url).toEqual({ before: 'https://sis.riverside.edu/hooks', after: 'https://new.example/x' });
+  });
+
+  test('event subscriptions are replaced as rows and audit keeps the public list', async () => {
+    const { service, prisma, tx, audit } = setup();
+    prisma.school_webhook.findFirst.mockResolvedValue(hookRow());
+    await service.update(SCHOOL, HOOK, { events: ['course.created'] }, ADMIN);
+    expect(tx.school_webhook_event.deleteMany).toHaveBeenCalledWith({ where: { webhook_id: HOOK } });
+    expect(tx.school_webhook_event.createMany).toHaveBeenCalledWith({
+      data: [{ webhook_id: HOOK, event_type: 'course.created' }],
+    });
+    expect(audit()[0].changes.events).toEqual({
+      before: ['grade.recorded'],
+      after: ['course.created'],
+    });
   });
 
   test('delete is audited with the name kept', async () => {

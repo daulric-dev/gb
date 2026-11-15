@@ -1,5 +1,5 @@
 import type { Prisma } from '@/generated/prisma/client';
-import { questionCredit } from '@/grading/quiz-questions';
+import { questionCredit, stringList } from '@/grading/quiz-questions';
 
 type Db = Prisma.TransactionClient;
 
@@ -311,7 +311,7 @@ async function questionEvidence(
         a
           ? {
               optionId: a.option_id,
-              optionIds: a.option_ids,
+              optionIds: stringList(a.option_ids),
               matches: (a.matches as Record<string, string> | null) ?? null,
               text: a.text_answer,
               numeric: a.numeric_answer === null ? null : Number(a.numeric_answer),

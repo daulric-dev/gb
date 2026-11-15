@@ -23,6 +23,12 @@ Students are created by `POST /api/auth/join-school` (`src/student-account`) or 
 
 **Search.** The term is trimmed, limited to 64 characters, and `, ( ) * % _ \` are stripped before a case-insensitive `contains` match.
 
+**Read auditing.** Roster reads, individual student records and profiles are
+recorded in the school audit log. Entries include the actor, scope and minimal
+metadata (row count/search flag, or whether guardian contacts were included);
+they do not copy the student data returned by the route. If the audit write
+fails, the read response fails closed.
+
 ### Services / exports
 
 - `StudentService`: `findAll`, `findAllPaginated`, `findOne`, `profile`, `update`. **Not exported** - no other module injects it.

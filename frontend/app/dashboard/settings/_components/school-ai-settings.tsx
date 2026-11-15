@@ -23,9 +23,10 @@ import { Switch } from "@/components/ui/switch";
  * The school's AI settings (`school:update`, while `ai_assistance` is on):
  * which of the organisation's providers the school uses (the organisation
  * default or one it made available to schools; the model is set by the
- * organisation), the data notice naming that provider, and whether
- * students' work may be sent for rubric feedback suggestions (off by
- * default). The whole feature is switched off for the school under Features.
+ * organisation), the data notice naming that provider, whether students'
+ * work may be sent for marking suggestions, and whether the text of their
+ * uploaded files may be sent for AI grading drafts (both off by default;
+ * changes need step-up). The whole feature is switched off for the school under Features.
  */
 export function SchoolAiSettings() {
   useSignals();
@@ -47,7 +48,7 @@ export function SchoolAiSettings() {
   if (!allowed || !status.value) return null;
   const s = status.value;
 
-  async function save(body: { allowStudentWork?: boolean; providerId?: string | null }) {
+  async function save(body: { allowStudentWork?: boolean; allowStudentFiles?: boolean; providerId?: string | null }) {
     saving.value = true;
     try {
       status.value = await aiSchoolApi.save(body);
@@ -102,9 +103,9 @@ export function SchoolAiSettings() {
         <span>
           Allow sending student work to the AI provider
           <span id={`${id}-work-help`} className="block text-xs text-muted-foreground">
-            Lets teachers ask for rubric feedback suggestions, which sends the text a student
-            handed in (names and emails replaced) to {s.provider ? `"${s.provider.name}"` : "the provider"}.
-            Off by default. Files are never sent.
+            Lets teachers ask for marking suggestions, which sends the text a student typed in
+            (names, emails and phone numbers replaced) to {s.provider ? `"${s.provider.name}"` : "the provider"}.
+            Off by default. Files are sent only with the next setting on as well.
           </span>
         </span>
         <Switch
@@ -113,6 +114,29 @@ export function SchoolAiSettings() {
           checked={s.allowStudentWork}
           disabled={saving.value}
           onCheckedChange={(v) => void save({ allowStudentWork: v })}
+        />
+      </label>
+
+      <label htmlFor={`${id}-files`} className="mt-4 flex items-start justify-between gap-4 text-sm">
+        <span>
+          Allow sending uploaded files to the AI provider
+          <span id={`${id}-files-help`} className="block text-xs text-muted-foreground">
+            Lets teachers ask for AI marking drafts of work handed in as files. GradeBook reads the
+            text of PDFs (with a text layer), Word .docx, plain text, Markdown and code files on its own
+            server, replaces names, emails and phone numbers, cuts long work to a set length and sends
+            only that text to {s.provider ? `"${s.provider.name}"` : "the provider"}. Images, scanned
+            pages and other files are never sent. Students whose record restricts AI are always left
+            out. The AI&apos;s suggestion is kept as a draft for the teacher (never shown to students)
+            until the teacher saves a mark or discards it, and is deleted automatically after a set
+            period. Off by default; needs the setting above on too.
+          </span>
+        </span>
+        <Switch
+          id={`${id}-files`}
+          aria-describedby={`${id}-files-help`}
+          checked={!!s.allowStudentFiles}
+          disabled={saving.value || !s.allowStudentWork}
+          onCheckedChange={(v) => void save({ allowStudentFiles: v })}
         />
       </label>
     </Card>

@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   batchTexts,
   CACHE_STORAGE_PREFIX,
+  clearTranslationCache,
+  ENGINE_INFO,
+  languageToOffer,
+  readLanguageChoice,
+  sharedTranslationCache,
   DEFAULT_LANGUAGE,
   isLanguageCode,
   isTranslatable,
@@ -63,35 +68,91 @@ describe("languages", () => {
 
   test("stored choice round-trips, English included", () => {
     const s = new MemoryStorage();
-    expect(readStoredLanguage(s, [])).toBe("en");
+    expect(readStoredLanguage(s)).toBe("en");
+    expect(readLanguageChoice(s)).toBeNull();
     storeLanguage("ar", s);
     expect(s.getItem(LANGUAGE_STORAGE_KEY)).toBe("ar");
-    expect(readStoredLanguage(s, ["fr-FR"])).toBe("ar");
+    expect(readStoredLanguage(s)).toBe("ar");
     storeLanguage("en", s);
-    // An explicit English choice wins over a non-English device.
-    expect(readStoredLanguage(s, ["fr-FR"])).toBe("en");
+    expect(readLanguageChoice(s)).toBe("en");
+    expect(readStoredLanguage(s)).toBe("en");
   });
 
-  test("with no choice, the device language is used when offered", () => {
+  test("with no choice, English is shown: the device language is only offered", () => {
     const s = new MemoryStorage();
-    expect(readStoredLanguage(s, ["fr-CA", "en-US"])).toBe("fr");
-    expect(readStoredLanguage(s, ["de-DE", "pt-BR"])).toBe("pt");
-    expect(readStoredLanguage(s, ["zh-Hans-CN"])).toBe("zh");
-    expect(readStoredLanguage(s, ["zh-TW"])).toBe("en");
-    expect(readStoredLanguage(s, ["de-DE"])).toBe("en");
+    // Nothing is translated without a choice, whatever the device prefers.
+    expect(readStoredLanguage(s)).toBe("en");
+    expect(languageToOffer(s, ["fr-CA", "en-US"])).toBe("fr");
+    expect(languageToOffer(s, ["de-DE", "pt-BR"])).toBe("pt");
+    expect(languageToOffer(s, ["zh-Hans-CN"])).toBe("zh");
+    expect(languageToOffer(s, ["zh-TW"])).toBeNull();
+    expect(languageToOffer(s, ["de-DE"])).toBeNull();
+    // English devices are never asked.
+    expect(languageToOffer(s, ["en-GB", "fr-FR"])).toBeNull();
     expect(deviceLanguage(["es-419"])).toBe("es");
     expect(matchLanguage("ar_EG")).toBe("ar");
     expect(matchLanguage(42)).toBeNull();
   });
 
-  test("unknown or blocked storage falls back to the device, then English", () => {
+  test("an answer (a \"no\" included) is never asked again", () => {
+    const s = new MemoryStorage();
+    storeLanguage("en", s);
+    expect(languageToOffer(s, ["fr-FR"])).toBeNull();
+    expect(readStoredLanguage(s)).toBe("en");
+    // Even an unreadable stored value counts as answered (it is not offered again).
+    s.setItem(LANGUAGE_STORAGE_KEY, "klingon");
+    expect(languageToOffer(s, ["fr-FR"])).toBeNull();
+  });
+
+  test("unknown or blocked storage: English, and no question (an answer could not be kept)", () => {
     const s = new MemoryStorage();
     s.setItem(LANGUAGE_STORAGE_KEY, "klingon");
-    expect(readStoredLanguage(s, [])).toBe("en");
-    expect(readStoredLanguage(throwing, [])).toBe("en");
-    expect(readStoredLanguage(throwing, ["es"])).toBe("es");
+    expect(readStoredLanguage(s)).toBe("en");
+    expect(readStoredLanguage(throwing)).toBe("en");
+    expect(languageToOffer(throwing, ["es"])).toBeNull();
+    expect(languageToOffer(null, ["es"])).toBeNull();
     expect(() => storeLanguage("fr", throwing)).not.toThrow();
-    expect(readStoredLanguage(null, [])).toBe("en");
+    expect(readStoredLanguage(null)).toBe("en");
+  });
+});
+
+describe("sign-out", () => {
+  test("clears every cached translation, keeps the language choice and other keys", () => {
+    const session = new MemoryStorage();
+    const cache = new TranslationCache(session);
+    cache.setMany("es", [["Ada Lovelace's report", "Informe de Ada Lovelace"]]);
+    cache.setMany("fr", [["Hello", "Bonjour"]]);
+    session.setItem("other", "kept");
+    session.setItem(LANGUAGE_STORAGE_KEY, "es");
+    clearTranslationCache(session);
+    expect(session.getItem(CACHE_STORAGE_PREFIX + "es")).toBeNull();
+    expect(session.getItem(CACHE_STORAGE_PREFIX + "fr")).toBeNull();
+    expect(session.getItem("other")).toBe("kept");
+    expect(session.getItem(LANGUAGE_STORAGE_KEY)).toBe("es");
+    expect(() => clearTranslationCache(throwing)).not.toThrow();
+    expect(() => clearTranslationCache(null)).not.toThrow();
+  });
+
+  test("the shared in-memory cache is emptied too (same instance)", () => {
+    const shared = sharedTranslationCache();
+    shared.setMany("es", [["Grades", "Notas"]]);
+    expect(shared.get("es", "Grades")).toBe("Notas");
+    // Default storage: this tab's sessionStorage, where the shared cache keeps its copy.
+    clearTranslationCache();
+    expect(sharedTranslationCache()).toBe(shared);
+    expect(shared.has("es", "Grades")).toBe(false);
+  });
+});
+
+describe("engines", () => {
+  test("Google and Yandex are uncontracted and say where text goes", () => {
+    expect(ENGINE_INFO.google.uncontracted).toBe(true);
+    expect(ENGINE_INFO.yandex.uncontracted).toBe(true);
+    expect(ENGINE_INFO.libre.uncontracted).toBe(false);
+    expect(ENGINE_INFO.deepl.uncontracted).toBe(false);
+    expect(ENGINE_INFO.google.transfer).toMatch(/United States/);
+    expect(ENGINE_INFO.yandex.transfer).toMatch(/Russia/);
+    expect(ENGINE_INFO.deepl.transfer).toMatch(/data processing agreement/);
   });
 });
 

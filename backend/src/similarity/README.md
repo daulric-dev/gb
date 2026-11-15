@@ -10,8 +10,8 @@ Flags text submissions that closely match others in the same activity or, option
 2. **Skip** texts under `MIN_WORDS` (50) words.
 3. **Shingles**: every run of `SHINGLE_WORDS` (5) words, hashed with FNV-1a 32-bit (a Postgres `integer`).
 4. **Subtract** every shingle that also occurs in the activity's instructions (and, for an essay answer, the question's prompt): quoting the prompt is never a match.
-5. **Winnow** (window `WINNOW_WINDOW` = 4): the minimum hash of each window, distinct and sorted, stored in `similarity_fingerprint.hashes`.
-6. **Candidates**: fingerprints sharing any hash (`hashes && $1`, GIN index), in the same school, not the same student's work; the same activity and part, or with the school pool also the school's courses in its latest `pool_terms` terms (by start date) and courses without a term.
+5. **Winnow** (window `WINNOW_WINDOW` = 4): the minimum hash of each window, distinct and sorted, stored as indexed child rows in `similarity_fingerprint_hash`.
+6. **Candidates**: fingerprints sharing any hash, found through the hash child-row index, in the same school, not the same student's work; the same activity and part, or with the school pool also the school's courses in its latest `pool_terms` terms (by start date) and courses without a term.
 7. **Score**: containment, the percent of one fingerprint's hashes found in the other's, stored both ways (`similarity_match`) when at least `STORE_FLOOR` (10%). The teacher's threshold (default 40%) filters on read.
 
 `text_hash` (sha256 of the algorithm version, the normalised text and the subtracted texts) makes the job idempotent: an unchanged part is not recomputed. A part that disappears or becomes too short loses its fingerprint (matches cascade).

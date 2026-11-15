@@ -207,7 +207,7 @@ export function QuizAnswersDialog({
   const d = data.value;
   return (
     <Dialog open={!!student} onOpenChange={onOpenChangeAction}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl" translate="no">
         <DialogHeader>
           <DialogTitle>{student?.name ?? "Student"}: answers</DialogTitle>
           <DialogDescription>

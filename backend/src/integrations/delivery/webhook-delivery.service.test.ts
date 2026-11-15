@@ -57,7 +57,7 @@ function setup(opts: {
     id: HOOK,
     school_id: SCHOOL,
     name: 'SIS',
-    url: opts.url ?? 'http://sis.internal/hooks',
+    url: opts.url ?? 'https://sis.internal/hooks',
     secret_enc: opts.secretEnc ?? encryptWebhookSecret({ schoolId: SCHOOL, webhookId: HOOK }, 'whsec_x'),
     enabled: opts.enabled ?? true,
     verify_tls: opts.verifyTls ?? true,
@@ -81,7 +81,7 @@ function setup(opts: {
   });
   tx.school_webhook.updateMany.mockResolvedValue({ count: 1 });
   const features = { isEnabled: mock(async () => opts.feature ?? true) };
-  const alerts = { autoDisabled: mock(async () => {}) };
+  const alerts = { autoDisabled: mock(async () => {}), plainHttpRefused: mock(async () => {}) };
   const queue = { addBulk: mock(async () => []) };
   const service = new WebhookDeliveryService(
     prisma as any,
@@ -128,8 +128,10 @@ describe('WebhookDeliveryService.attempt', () => {
   });
 
   test('TLS: http has none (tls_verified null); https verifies by default, or not when off, recorded per attempt', async () => {
-    const http = setup({ verifyTls: false });
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true'; // plain http allowed (private network)
+    const http = setup({ url: 'http://sis.internal/hooks', verifyTls: false });
     await http.service.attempt(DELIVERY);
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
     expect((http.calls[0].init as any).tls).toBeUndefined();
     expect(http.updates()[0].tls_verified).toBeNull();
 
@@ -195,6 +197,34 @@ describe('WebhookDeliveryService.attempt', () => {
     expect((alerts.autoDisabled.mock.calls[0] as any[])[2]).toBe(3);
   });
 
+  test('a plain-http URL is refused at send time: the delivery fails with the reason, the webhook goes off once and the school is alerted', async () => {
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    const { service, tx, alerts, calls, updates, queue } = setup({ url: 'http://sis.example/hooks' });
+    const r = await service.attempt(DELIVERY);
+    await new Promise((res) => setTimeout(res, 0));
+    expect(r?.refused).toBe('plain_http');
+    expect(calls).toHaveLength(0);
+    expect(updates()[0]).toMatchObject({ status: 'failed', next_attempt_at: null, attempts: 1 });
+    expect(updates()[0].last_error).toContain('plain http');
+    expect(queue.addBulk).not.toHaveBeenCalled();
+    const off = tx.school_webhook.updateMany.mock.calls[0][0];
+    expect(off.where).toEqual({ id: HOOK, enabled: true });
+    expect(off.data.disabled_reason).toContain('plain http');
+    expect(alerts.plainHttpRefused).toHaveBeenCalledTimes(1);
+    expect(alerts.autoDisabled).not.toHaveBeenCalled();
+  });
+
+  test('plain http is sent when WEBHOOK_ALLOW_PRIVATE=true', async () => {
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
+    try {
+      const { service, calls } = setup({ url: 'http://sis.example/hooks' });
+      expect((await service.attempt(DELIVERY))?.ok).toBe(true);
+      expect(calls).toHaveLength(1);
+    } finally {
+      delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    }
+  });
+
   test('below the threshold nothing is switched off', async () => {
     const { service, tx, alerts } = setup({ status: 500, failures: 0 });
     await service.attempt(DELIVERY);
@@ -228,12 +258,45 @@ describe('WebhookDeliveryService.attempt', () => {
 
   test('processOne claims by id and sends only what it claimed', async () => {
     const { service, prisma, calls } = setup();
-    prisma.$queryRaw.mockResolvedValueOnce([]);
+    // Not due (or not pending): nothing to claim.
+    prisma.webhook_delivery.findMany.mockResolvedValueOnce([]);
     await service.processOne(DELIVERY);
     expect(calls).toHaveLength(0);
-    prisma.$queryRaw.mockResolvedValueOnce([{ id: DELIVERY }]);
+    // Due, but another worker's claim won the compare-and-set.
+    prisma.webhook_delivery.findMany.mockResolvedValueOnce([{ id: DELIVERY }]);
+    prisma.webhook_delivery.updateMany.mockResolvedValueOnce({ count: 0 });
+    await service.processOne(DELIVERY);
+    expect(calls).toHaveLength(0);
+    prisma.webhook_delivery.findMany.mockResolvedValueOnce([{ id: DELIVERY }]);
+    prisma.webhook_delivery.updateMany.mockResolvedValueOnce({ count: 1 });
     await service.processOne(DELIVERY);
     expect(calls).toHaveLength(1);
+    expect(prisma.webhook_delivery.findMany.mock.calls[0][0].where).toMatchObject({
+      id: DELIVERY,
+      status: 'pending',
+    });
+  });
+
+  test('claim: due pending rows oldest first, each pushed out by a lease only while still due', async () => {
+    const { service, prisma } = setup();
+    const OTHER = '66666666-6666-4666-8666-666666666666';
+    prisma.webhook_delivery.findMany.mockResolvedValue([{ id: DELIVERY }, { id: OTHER }]);
+    prisma.webhook_delivery.updateMany.mockImplementation(async ({ where }: any) => ({
+      count: where.id === DELIVERY ? 1 : 0,
+    }));
+    const before = Date.now();
+    expect(await service.claim(10)).toEqual([DELIVERY]);
+
+    const read = prisma.webhook_delivery.findMany.mock.calls[0][0];
+    expect(read.where.status).toBe('pending');
+    const now = read.where.next_attempt_at.lte as Date;
+    expect(now.getTime()).toBeGreaterThanOrEqual(before);
+    expect(read.orderBy).toEqual([{ next_attempt_at: 'asc' }, { id: 'asc' }]);
+    expect(read.take).toBe(10);
+
+    const write = prisma.webhook_delivery.updateMany.mock.calls[0][0];
+    expect(write.where).toEqual({ id: DELIVERY, status: 'pending', next_attempt_at: { lte: now } });
+    expect(write.data.next_attempt_at.getTime()).toBeGreaterThan(now.getTime());
   });
 
   test('custom headers are sent as name: value on scheduled attempts and on sendNow (test, redeliver)', async () => {

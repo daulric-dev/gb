@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@/generated/prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { auditStore } from './audit-store';
 import { CacheService } from '@/cache/cache.service';
 import {
   effectiveForSchool,
@@ -16,6 +17,7 @@ import {
 import { buildEnvelope } from '@/integrations/events/webhook-envelope';
 import { validateEventData } from '@/integrations/events/webhook-event-types';
 import { isForeignKeyViolation, isUniqueViolation } from '@/common/db-values';
+import { userSchoolId } from '@/common/user-school';
 
 export type AuditActor = {
   id: string;
@@ -31,21 +33,99 @@ export type AuditChanges = Record<string, AuditChange>;
 export type AuditLogEntry = {
   entity: string;
   entityId: string | null;
-  /** `read` records an access, not a change (safeguarding pastoral notes). */
-  action: 'create' | 'update' | 'delete' | 'read';
+  /**
+   * `read` records an access, not a change (pastoral notes); `export` a
+   * download of personal data (CSV exports), with its scope and row count.
+   * Neither is sent to webhooks.
+   */
+  action: 'create' | 'update' | 'delete' | 'read' | 'export';
   changes: AuditChanges;
 };
 
 /**
  * Entities whose audit entries never leave the platform: no `audit.changed`
- * webhook is queued for them (pastoral notes are never sent to webhooks).
- * Their entries carry ids and settings only, never note text.
+ * webhook is queued for them (pastoral notes and quiz accommodations, which
+ * are health and welfare information, are never sent to webhooks). Their
+ * entries carry ids and settings only, never note text or reasons.
  */
 export const PRIVATE_AUDIT_ENTITIES: ReadonlySet<string> = new Set([
   'pastoral_note',
   'pastoral_category',
   'pastoral_setting',
+  'activity_accommodation',
+  'student_accommodation',
+  'school_retention_setting',
 ]);
+
+/**
+ * Per entity, the only changed fields an `audit.changed` webhook may carry;
+ * the audit log itself keeps every field. Entities not listed send all
+ * their (already redacted) fields. `student`: names and enrolment, never
+ * gender or date of birth.
+ */
+export const WEBHOOK_AUDIT_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  student: ['first_name', 'last_name', 'enrollment_date', 'is_active'],
+};
+
+/** The changes an `audit.changed` webhook carries for this entity. */
+export function webhookChanges(
+  entity: string,
+  changes: Record<string, unknown>,
+): Record<string, unknown> {
+  const allowed = WEBHOOK_AUDIT_FIELDS[entity];
+  if (!allowed) return changes;
+  return Object.fromEntries(
+    Object.entries(changes).filter(([field]) => allowed.includes(field)),
+  );
+}
+
+/** What `recordExport` writes: one entry per download. */
+export type AuditExport = {
+  /** What was exported, e.g. `gradebook`, `attendance`, `pastoral_note`. */
+  entity: string;
+  /** The course or student it was about, when there is one. */
+  entityId?: string | null;
+  /** `course`, `school` or `student`. */
+  scope: string;
+  /** The CSV as sent; its data rows are counted. Or give `rows`. */
+  csv?: string;
+  rows?: number;
+  /** Filters or table choice that shaped the export (no personal data). */
+  details?: Record<string, unknown>;
+};
+
+/** A staff or administrator opened personal data; details must describe the access, never the data. */
+export type AuditRead = {
+  entity: string;
+  entityId?: string | null;
+  /** The course's school is resolved when only courseId is supplied. */
+  courseId?: string;
+  schoolId?: string | null;
+  details?: Record<string, unknown>;
+};
+
+/**
+ * Data records in a CSV (header excluded), counting line breaks outside
+ * quoted cells, so a multi-line cell is one record.
+ */
+export function csvRecordCount(csv: string): number {
+  let records = 0;
+  let quoted = false;
+  let sawData = false;
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && (ch === '\n' || ch === '\r')) {
+      if (ch === '\r' && csv[i + 1] === '\n') i++;
+      if (sawData) records++;
+      sawData = false;
+      continue;
+    }
+    sawData = true;
+  }
+  if (sawData) records++;
+  return Math.max(records - 1, 0);
+}
 
 type RevertableEntity = 'academic_year' | 'term';
 type RevertField = 'name' | 'start_date' | 'end_date' | 'sort_order';
@@ -128,8 +208,10 @@ export class AuditLogService {
     actor: AuditActor,
     entry: AuditLogEntry,
   ): Promise<void> {
-    // A read is recorded even without changes; a write that changed nothing is not.
-    if (entry.action !== 'read' && Object.keys(entry.changes).length === 0) return;
+    // A read or export is recorded even without changes; a write that
+    // changed nothing is not.
+    const access = entry.action === 'read' || entry.action === 'export';
+    if (!access && Object.keys(entry.changes).length === 0) return;
     const [profile, school] = await Promise.all([
       tx.user_profile.findUnique({
         where: { id: actor.id },
@@ -143,7 +225,7 @@ export class AuditLogService {
       schoolId
         ? tx.school.findUnique({
             where: { id: schoolId },
-            select: { name: true, disabled_features: true },
+            select: { name: true, disabled_feature_rows: { select: { feature: true } } },
           })
         : Promise.resolve(null),
     ]);
@@ -153,8 +235,7 @@ export class AuditLogService {
         .join(' ')
         .trim() || null;
 
-    const auditRecord = await tx.audit_log.create({
-      data: {
+    const auditRecord = await auditStore(this.prisma).appendAuditLog(tx, {
         scope: schoolId ? 'school' : 'organisation',
         school_id: schoolId,
         school_name: school?.name ?? null,
@@ -165,12 +246,11 @@ export class AuditLogService {
         entity_id: entry.entityId,
         action: entry.action,
         changes: safeValue(entry.changes) as Prisma.InputJsonValue,
-      },
     });
     if (
       schoolId &&
       school &&
-      entry.action !== 'read' &&
+      !access &&
       !PRIVATE_AUDIT_ENTITIES.has(entry.entity)
     ) {
       const organisation = await tx.organisation.findFirst({
@@ -179,14 +259,14 @@ export class AuditLogService {
       if (
         effectiveForSchool(
           organisationSettings(organisation?.features),
-          school.disabled_features,
+          school.disabled_feature_rows.map(({ feature }) => feature),
         ).integrations
       ) {
         const hooks = await tx.school_webhook.findMany({
           where: {
             school_id: schoolId,
             enabled: true,
-            events: { has: 'audit.changed' },
+            event_subscriptions: { some: { event_type: 'audit.changed' } },
           },
           select: { id: true },
         });
@@ -203,7 +283,10 @@ export class AuditLogService {
                 name: actorName,
                 email: profile?.app_user?.email ?? profile?.email ?? null,
               },
-              changes: auditRecord.changes as Record<string, unknown>,
+              changes: webhookChanges(
+                auditRecord.entity,
+                auditRecord.changes as Record<string, unknown>,
+              ),
               createdAt: auditRecord.created_at.toISOString(),
             },
           };
@@ -227,6 +310,71 @@ export class AuditLogService {
         }
       }
     }
+  }
+
+  /**
+   * Record a download of personal data (a CSV export): who, what, the scope
+   * and how many rows. The school is the course's when `courseId` is given,
+   * else the caller's active school. Awaited before the file is sent, so an
+   * export that cannot be audited is not sent.
+   */
+  async recordExport(
+    actorId: string,
+    entry: AuditExport & { courseId?: string; schoolId?: string | null },
+  ): Promise<void> {
+    let schoolId = entry.schoolId ?? null;
+    if (!schoolId && entry.courseId) {
+      const course = await this.prisma.course.findUnique({
+        where: { id: entry.courseId },
+        select: { school_id: true },
+      });
+      schoolId = course?.school_id ?? null;
+    }
+    if (!schoolId) schoolId = await userSchoolId(this.prisma, actorId);
+    const rows = entry.rows ?? (entry.csv !== undefined ? csvRecordCount(entry.csv) : 0);
+    const changes: AuditChanges = {
+      scope: { before: null, after: entry.scope },
+      rows: { before: null, after: rows },
+    };
+    for (const [key, value] of Object.entries(entry.details ?? {})) {
+      if (value !== undefined) changes[key] = { before: null, after: value };
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await this.record(tx, schoolId, { id: actorId }, {
+        entity: entry.entity,
+        entityId: entry.entityId ?? entry.courseId ?? null,
+        action: 'export',
+        changes,
+      });
+    });
+  }
+
+  /**
+   * Record a read of personal data. Read events are deliberately excluded
+   * from audit.changed webhooks; details should contain scope/count metadata,
+   * never names, grades, note text or other personal data values.
+   */
+  async recordRead(actorId: string, entry: AuditRead): Promise<void> {
+    let schoolId = entry.schoolId ?? null;
+    if (!schoolId && entry.courseId) {
+      const course = await this.prisma.course.findUnique({
+        where: { id: entry.courseId },
+        select: { school_id: true },
+      });
+      schoolId = course?.school_id ?? null;
+    }
+    if (!schoolId) schoolId = await userSchoolId(this.prisma, actorId);
+    const changes: AuditChanges = Object.fromEntries(
+      Object.entries(entry.details ?? {}).map(([key, value]) => [key, { before: null, after: value }]),
+    );
+    await this.prisma.$transaction(async (tx) => {
+      await this.record(tx, schoolId, { id: actorId }, {
+        entity: entry.entity,
+        entityId: entry.entityId ?? entry.courseId ?? null,
+        action: 'read',
+        changes,
+      });
+    });
   }
 
   async list(

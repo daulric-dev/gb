@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { homeRouteFor } from "@/lib/routing";
 import { ApiError } from "@/lib/api";
+import { mfaTokenFrom } from "@/lib/mfa";
 import {
   hasPendingSignIn,
   isHandledByAuthSession,
@@ -60,6 +61,11 @@ export default function SsoReturnScreen() {
         const profile = await refresh();
         router.replace(homeRouteFor(profile));
       } catch (err) {
+        const mfaToken = mfaTokenFrom(err);
+        if (mfaToken) {
+          router.replace({ pathname: "/(auth)/two-step", params: { token: mfaToken } } as never);
+          return;
+        }
         fail(err instanceof ApiError && err.status < 500 ? "expired" : "failed");
       }
     })();

@@ -68,6 +68,26 @@ export interface WebhookAttempt {
   durationMs: number;
   /** Whether the receiver's certificate was checked: null for plain http. */
   tlsVerified: boolean | null;
+  /**
+   * Set when nothing was sent because the URL is plain http and
+   * WEBHOOK_ALLOW_PRIVATE is not true (a webhook saved before https was
+   * required). Retrying cannot help.
+   */
+  refused?: 'plain_http';
+}
+
+export const PLAIN_HTTP_REFUSED =
+  'Not sent: the webhook URL uses plain http, which is refused (deliveries could be read or changed in transit). Change it to https://';
+
+/** Plain http is refused at send time unless WEBHOOK_ALLOW_PRIVATE=true (self-hosted private networks). */
+export function plainHttpRefused(url: string): boolean {
+  let protocol: string;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    return false;
+  }
+  return protocol === 'http:' && process.env.WEBHOOK_ALLOW_PRIVATE !== 'true';
 }
 
 /**
@@ -243,6 +263,17 @@ export async function sendWebhook(
   fetchImpl: FetchLike = safeWebhookFetch,
   timeoutMs = DELIVERY_TIMEOUT_MS,
 ): Promise<WebhookAttempt> {
+  if (plainHttpRefused(req.url)) {
+    return {
+      ok: false,
+      statusCode: null,
+      error: PLAIN_HTTP_REFUSED,
+      responseExcerpt: null,
+      durationMs: 0,
+      tlsVerified: null,
+      refused: 'plain_http',
+    };
+  }
   const timestamp = req.timestamp ?? Math.floor(Date.now() / 1000);
   const started = Date.now();
   const controller = new AbortController();

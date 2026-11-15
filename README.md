@@ -115,10 +115,10 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 ### 3. Start the local services and create the schema
 
 ```bash
-bun run preload    # Postgres, Redis, S3 (SeaweedFS) and Mailpit via docker-compose.dev.yml, then `prisma migrate deploy`
+bun run preload    # Postgres, Redis, S3 (SeaweedFS) and Mailpit via docker-compose.dev.yml, then `bun run db:setup`
 ```
 
-`bun run postload` stops them. `bun run db:setup` applies pending migrations on its own. Sign-in emails land in Mailpit at http://127.0.0.1:8025.
+`bun run postload` stops them. `bun run db:setup` brings the schema up to date on its own (`prisma db push`, then the hardening and setup steps). Sign-in emails land in Mailpit at http://127.0.0.1:8025.
 
 See [`docs/content/environment-variables.md`](docs/content/environment-variables.md) for every variable, [`docs/content/hosting-requirements.md`](docs/content/hosting-requirements.md) for hosting and sizing requirements, and [`docs/content/developer-guide.md`](docs/content/developer-guide.md) for the full path from clone to deployed.
 
@@ -194,8 +194,8 @@ All tasks are orchestrated by [Turborepo](https://turbo.build) for caching and p
 | `bun audit`                                                              | Check installed dependencies for known vulnerabilities |
 | `bun run release <bump>`                                                 | Tag and publish a major, minor, or patch release from `main` |
 | `bun run preview`                                                        | Build, then run the API and web app in production mode under PM2 ([`infrastructure/pm2`](infrastructure/pm2/README.md#local-preview)); Ctrl+C stops it |
-| `bun run db:setup` / `db:deploy`                                       | Apply pending Prisma migrations       |
-| `bun run db:migrate --name <change>`                                     | Create and apply a migration from `.prisma` edits |
+| `bun run db:setup` / `db:deploy`                                       | `prisma db push`, then database hardening and one-off setup steps |
+| `bun run db:harden`                                                      | Hardening and setup steps only (idempotent) |
 | `bun run db:pull` / `db:studio`                                        | Introspect the database / open Prisma Studio |
 | `bun run seed:demo` / `smoke`                                          | Load demo data / end-to-end API check (API running) |
 

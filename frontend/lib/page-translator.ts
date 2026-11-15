@@ -16,6 +16,19 @@ import {
  * people type. Each node keeps its original (WeakMap) and only originals are
  * ever sent, so switching language or back to English restores exactly.
  *
+ * What is never sent to the translation engine (personal data stays here):
+ * - whole routes (`BLOCKED_ROUTES`): chat and messages, pastoral notes,
+ *   student record pages, analytics (at-risk lists) and audit logs. On those
+ *   pages nothing is collected or requested, and requests already queued for
+ *   them are dropped;
+ * - any subtree marked `translate="no"`, `.notranslate` or `data-private`
+ *   (`BLOCKED_SELECTOR`): shared renderers mark names, avatars, marks,
+ *   feedback, discussion replies, email addresses, school names and course
+ *   codes this way (`<NoTranslate>` in components/translation);
+ * - form fields, code and rich-text editors.
+ * Free text inside course content (a name written in an announcement) is
+ * not recognised and is sent like the rest of that content.
+ *
  * Text is replaced through `nodeValue` on the existing nodes, never by
  * wrapping it in new elements: React keeps owning its nodes. When React later
  * writes a new value into a node, that value is a fresh original.
@@ -26,7 +39,8 @@ export const TRANSLATED_ATTRIBUTES = ["placeholder", "title", "aria-label", "alt
 
 /**
  * Subtrees that are never translated, text or attributes: code, scripts,
- * rich-text editors and anything marked `translate="no"` / `.notranslate`.
+ * rich-text editors and anything marked `translate="no"`, `.notranslate` or
+ * `data-private` (personal data: names, marks, feedback, messages).
  */
 export const BLOCKED_SELECTOR = [
   "script",
@@ -40,7 +54,42 @@ export const BLOCKED_SELECTOR = [
   '[contenteditable]:not([contenteditable="false"])',
   '[translate="no"]',
   ".notranslate",
+  "[data-private]",
 ].join(",");
+
+/**
+ * Routes whose pages are about individual people (messages, pastoral and
+ * safeguarding notes, a student's record, at-risk analytics, audit logs):
+ * nothing on them is ever sent for translation. Matched against the path
+ * (`/dashboard/chat`, `/dashboard/chat/…`), not the query.
+ */
+export const BLOCKED_ROUTES: readonly RegExp[] = [
+  /^\/dashboard\/chat(?:\/|$)/,
+  /^\/portal\/messages(?:\/|$)/,
+  /^\/dashboard\/pastoral(?:\/|$)/,
+  // A student's record: profile, accommodations, guardians, pastoral timeline.
+  /^\/dashboard\/students\/[^/]+(?:\/|$)/,
+  /^\/dashboard\/attendance\/students\/[^/]+(?:\/|$)/,
+  /^\/dashboard\/courses\/[^/]+\/outcomes\/students\/[^/]+(?:\/|$)/,
+  // At-risk lists and per-student analytics.
+  /^\/dashboard\/analytics(?:\/|$)/,
+  /^\/dashboard\/courses\/[^/]+\/analytics(?:\/|$)/,
+  /^\/dashboard\/audit-log(?:\/|$)/,
+  /^\/organisation\/audit-log(?:\/|$)/,
+];
+
+/** Whether nothing on the page at `pathname` may be sent for translation. */
+export function isBlockedRoute(pathname: string | null | undefined): boolean {
+  if (typeof pathname !== "string") return false;
+  // Trailing slashes and case do not matter to the router; they must not here either.
+  const path = pathname.toLowerCase().replace(/\/+$/, "") || "/";
+  return BLOCKED_ROUTES.some((re) => re.test(path));
+}
+
+function currentPathBlocked(): boolean {
+  const loc = (globalThis as { location?: Location }).location;
+  return isBlockedRoute(loc?.pathname);
+}
 
 /**
  * Elements whose text children are what someone typed or picked (a
@@ -54,9 +103,16 @@ const BUTTON_INPUT_TYPES = new Set(["button", "submit", "reset"]);
 const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
 
+/**
+ * Marks an element whose own attributes (an `aria-label` such as "Ada's
+ * pages") hold personal data, while its children are still translated.
+ */
+export const PRIVATE_LABEL_ATTRIBUTE = "data-private-label";
+
 /** The attributes of `el` that are translated (an input button's `value` included). */
 export function attributesFor(el: Element): string[] {
   const out: string[] = [];
+  if (el.hasAttribute(PRIVATE_LABEL_ATTRIBUTE)) return out;
   for (const name of TRANSLATED_ATTRIBUTES) if (el.hasAttribute(name)) out.push(name);
   if (
     el.tagName === "INPUT" &&
@@ -154,6 +210,12 @@ export interface PageTranslatorOptions {
   firstBatchSize?: number;
   /** Requests in flight at once. */
   concurrency?: number;
+  /**
+   * Whether the current page must not be translated at all. Checked before
+   * every pass and every request. Default: `BLOCKED_ROUTES` against
+   * `location.pathname`.
+   */
+  isBlocked?: () => boolean;
 }
 
 type Target = Text | Element;
@@ -267,6 +329,37 @@ export class PageTranslator {
       else if (this.work.length || this.working) await new Promise((r) => setTimeout(r, 0));
       else return;
     }
+  }
+
+  /**
+   * The route changed: on a blocked page, restore everything and drop queued
+   * work and requests; otherwise translate the whole page again.
+   */
+  routeChanged(): void {
+    if (this.lang === DEFAULT_LANGUAGE || this.disabled) return;
+    if (this.blocked()) {
+      this.dropPending();
+      this.restoreAll();
+      return;
+    }
+    const root = this.root();
+    if (root) this.dirty.add(root);
+    this.scan();
+  }
+
+  private blocked(): boolean {
+    return (this.options.isBlocked ?? currentPathBlocked)();
+  }
+
+  /** Forgets collected and queued work (nothing more is requested for it). */
+  private dropPending(): void {
+    for (const t of this.queue.flat()) this.inflight.delete(inflightKey(this.lang, t));
+    this.dirty.clear();
+    this.dirtyAttrs.clear();
+    this.work = [];
+    this.queue = [];
+    this.missing.clear();
+    this.waiting.clear();
   }
 
   /** Runs a pass over pending mutations at once instead of after the debounce (tests). */
@@ -393,6 +486,11 @@ export class PageTranslator {
 
   private scan(): void {
     if (this.lang === DEFAULT_LANGUAGE) return;
+    if (this.blocked()) {
+      // Keep observing (the route may change back), but collect nothing.
+      this.dropPending();
+      return;
+    }
     const targets = new Set<Target>(this.work);
     for (const node of this.dirty) {
       if (!node.isConnected) continue;
@@ -512,6 +610,10 @@ export class PageTranslator {
 
   private fetchMissing(): void {
     if (this.disabled || this.missing.size === 0) return;
+    if (this.blocked()) {
+      this.dropPending();
+      return;
+    }
     const wait = this.pausedUntil - Date.now();
     if (wait > 0) {
       if (!this.retryTimer) {
@@ -542,6 +644,11 @@ export class PageTranslator {
     // Requests for a language switched away from finish in the background
     // but no longer take a slot, so the new language starts at once.
     while (this.activeCurrent < this.concurrency && this.queue.length > 0 && !this.disabled) {
+      // Navigated to a blocked page while batches waited for a slot: send none of them.
+      if (this.blocked()) {
+        this.dropPending();
+        return;
+      }
       const batch = this.queue.shift()!;
       const lang = this.lang;
       const gen = this.generation;

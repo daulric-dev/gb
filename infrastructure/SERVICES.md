@@ -23,7 +23,7 @@ the production Compose stack behind its bundled Caddy reverse proxy. See
 | [S3 object storage](#s3-object-storage-s3) | `chrislusf/seaweedfs:4.48` | `s3` | not included (use any S3 provider) | **Yes** | `src/storage/` → `src/file-manager/`, `src/images/` |
 | [Mailpit / SMTP](#mailpit--smtp-mailpit) | `axllent/mailpit:v1.27` | `mailpit` | not included (use any SMTP server) | **Yes** (sign-in sends email) | `src/mail/` → `src/account/email-code.service.ts` |
 | [API + Caddy](#the-api-container) | API image + `caddy:2.11.8-alpine` | - | `app1`-`app3` + `caddy` | **Yes** | `backend/src/` |
-| [migrate](#migrate-release-step) | the API image | - | `migrate` (profile `release`) | Only with `MIGRATE_ON_START=false` | `backend/prisma/migrations/` |
+| [migrate](#migrate-release-step) | the API image | - | `migrate` (profile `release`) | Only with `MIGRATE_ON_START=false` | `backend/prisma/schema/`, `backend/src/database-setup/` |
 | [backup](#database-backups-backup-db-backup) | `infrastructure/backup/` (Postgres 18 client, age, rclone, supercronic) | `backup` (profile `backup`) | `backup` (runs by default) | **Yes** in production | None: reads the database, writes an S3 bucket |
 
 Everything the API needs is configured through environment variables. The full
@@ -53,18 +53,23 @@ chat message and notification lives here.
 
 | Feature | Where | Why it matters for the database |
 | --- | --- | --- |
-| Quiz scoring | SQL function `grading.submit_quiz` | Scores a submission under a row lock |
-| School join codes | SQL function `public.redeem_school_join_code` | Called by `src/student-account/` |
-| Student duplicates / merge | SQL functions `merge_student_records`, `student_duplicate_candidates` | Called by `src/student/` |
-| Search | `pg_trgm` extension (created by the baseline migration in schema `extensions`) | Fuzzy name search |
-| Retention purge | `pg_try_advisory_xact_lock` in `src/retention/retention.scheduler.ts` | Only one API replica runs the daily purge |
-| First-run setup | `pg_advisory_xact_lock` in `src/organisation/organisation.service.ts` (plus the `organisation_singleton` unique index) | Two setups racing each other cannot both create an organisation |
+| Search | `pg_trgm` extension (created by `bun run db:prepare` before `prisma db push`; schema `extensions` on databases built by the old migrations) | Trigram indexes for the student name search |
+| Audit logs | Append-only triggers on `audit_log`, `sso_audit_log`, `integration_audit_log` (created by `bun run db:harden`); only `src/audit-log/audit-store.ts` writes these tables | The application role cannot rewrite audit history; retention and erasure use a transaction-local bypass |
+| Student leaving date, peer review | Triggers `student_set_left_at`, `peer_review_allocation_not_self` (`db:harden`), backing the same rules in the services | Writes that bypass the API still keep `left_at` and refuse self-review |
+| Integrity rules | 231 CHECK constraints and 5 expression unique indexes (`db:harden`) | Defence in depth for rules the API validates |
+| Background jobs, first-run setup | `job_lease` rows (`src/common/job-lease.ts`); first-run setup re-checks in its transaction, backed by the `organisation_singleton` unique index | One replica runs each sweep; two setups racing cannot both create an organisation |
 
-**Migrations.** Hand-written SQL in `backend/prisma/migrations/`, applied with
-`prisma migrate deploy` (the container does this on start; see
-[migrate](#migrate-release-step)). Never run `prisma migrate reset` or
-`migrate dev` against a shared database. A fresh empty database is brought fully
-up to date by `migrate deploy` alone.
+**Schema.** No migration files: `bun run db:release` (the container does
+this on start; see [migrate](#migrate-release-step)) runs `db:prepare`,
+`prisma db push` and `db:harden` under a PostgreSQL advisory lock, so
+replicas starting together take turns. Push never runs with
+`--accept-data-loss`; the hardening step recreates the audit append-only
+triggers, the `left_at`/peer-review triggers, expression unique indexes and
+CHECK constraints, and runs one-off data steps once. A fresh empty database
+is brought fully up to date by it alone; a database built by the old
+`prisma migrate deploy` (v1.4.0) is bridged once. See
+`backend/prisma/DATABASE_PORTABILITY.md`. Never run `prisma migrate reset`,
+`migrate dev` or `db push --force-reset` against a shared database.
 
 **Compose details.**
 
@@ -286,9 +291,9 @@ are unaffected, and SSO (Google, Microsoft, SAML) sign-in does not need email.
 ## `migrate` (release step)
 
 A one-off container built from the same image as the API (the `x-app` anchor),
-running `bunx prisma migrate deploy`. It exists for deployments that set
-`MIGRATE_ON_START=false` on the API, so migrations run once as an explicit
-release step instead of on every container start:
+running `bun run db:release`. It exists for deployments that set
+`MIGRATE_ON_START=false` on the API, so the schema update runs once as an
+explicit release step instead of on every container start:
 
 ```bash
 docker compose --profile release run --rm migrate
@@ -314,7 +319,7 @@ The image (Bun 1.4.4, Alpine):
 
 1. installs dependencies from `bun.lock`,
 2. generates the Prisma client and builds the NestJS app,
-3. on start, runs `prisma migrate deploy` (unless `MIGRATE_ON_START=false`),
+3. on start, runs `bun run db:release` (unless `MIGRATE_ON_START=false`),
    then `bun --bun dist/src/main`.
 
 It needs, at minimum: `DATABASE_URL`, the `S3_*` variables, SMTP settings,

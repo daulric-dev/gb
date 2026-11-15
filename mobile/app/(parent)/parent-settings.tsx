@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { Text } from "@/components/ui/Text";
 import { useParent } from "@/features/parent/ParentContext";
+import { openDataDownload, openPrivacyNotice } from "@/lib/privacy-link";
 
 function Row({ label, value, onChange, disabled }: {
   label: string;
@@ -118,6 +119,15 @@ export default function ParentSettingsScreen() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Button variant="ghost" onPress={openPrivacyNotice}>
+        Privacy notice
+      </Button>
+
+      {/* Your own data and each child's, on the web: it needs "Confirm it's you". */}
+      <Button variant="ghost" onPress={() => openDataDownload("parent")}>
+        Download my data (opens the website)
+      </Button>
 
       <Button variant="destructive" onPress={() => void logout()}>
         Log out

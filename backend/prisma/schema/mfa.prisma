@@ -1,0 +1,47 @@
+/// Authenticator-app (TOTP) two-step verification for one user (src/mfa).
+/// `secret_enc` is the active secret, `pending_secret_enc` one being set up;
+/// both sealed with secret-box (info `gradebook:mfa-totp:v1`, AAD the user id).
+model mfa_totp {
+  user_id            String    @id @db.Uuid
+  secret_enc         String?
+  pending_secret_enc String?
+  pending_created_at DateTime? @db.Timestamptz(6)
+  /// Null until a code from the secret has been confirmed.
+  enabled_at         DateTime? @db.Timestamptz(6)
+  /// The 30-second step of the last accepted code: never accepted again.
+  last_used_step     BigInt?
+  failed_attempts    Int       @default(0)
+  locked_until       DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
+  app_user           app_user  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("account")
+}
+
+/// One-time recovery codes (SHA-256 hashes only).
+model mfa_recovery_code {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  code_hash  String
+  used_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  app_user   app_user  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, code_hash], map: "mfa_recovery_code_user_hash_unique")
+  @@index([user_id], map: "mfa_recovery_code_user_idx")
+  @@schema("account")
+}
+
+/// A session limited to setting up an authenticator app (the organisation
+/// requires one for the user's role and they had none at sign-in).
+model mfa_enrolment_gate {
+  session_id String   @id @db.Uuid
+  user_id    String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  session    session  @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  app_user   app_user @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "mfa_enrolment_gate_user_idx")
+  @@schema("account")
+}

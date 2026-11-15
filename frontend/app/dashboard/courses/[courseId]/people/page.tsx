@@ -189,7 +189,7 @@ export default function CoursePeoplePage() {
                               {initials(m)}
                             </AvatarFallback>
                           </Avatar>
-                          <div className="min-w-0">
+                          <div className="min-w-0" translate="no">
                             <p className="truncate font-medium">
                               {personName(m)}
                             </p>
@@ -233,6 +233,7 @@ export default function CoursePeoplePage() {
                             variant="ghost"
                             size="icon-sm"
                             aria-label={`Remove ${personName(m)}`}
+                            data-private-label
                             onClick={() =>
                               (removing.value = { kind: "staff", person: m })
                             }
@@ -291,7 +292,7 @@ export default function CoursePeoplePage() {
                         key={s.studentId}
                         className={s.status !== "active" ? "opacity-60" : ""}
                       >
-                        <TableCell className="pl-4 font-medium">
+                        <TableCell className="pl-4 font-medium" translate="no">
                           {can("student", "read") ? (
                             <Link
                               href={`/dashboard/students/${s.studentId}`}
@@ -325,6 +326,7 @@ export default function CoursePeoplePage() {
                               variant="ghost"
                               size="icon-sm"
                               aria-label={`Remove ${personName(s)}`}
+                              data-private-label
                               onClick={() =>
                                 (removing.value = { kind: "student", person: s })
                               }
@@ -371,7 +373,7 @@ export default function CoursePeoplePage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle translate="no">
               Remove {removing.value ? personName(removing.value.person) : ""}?
             </AlertDialogTitle>
             <AlertDialogDescription>

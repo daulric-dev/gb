@@ -314,7 +314,7 @@ describe('AuthService', () => {
         name: 'Riverside Trust',
         features: { student_messaging: true, calendar: false },
       });
-      prisma.school.findUnique.mockResolvedValue({ disabled_features: ['attendance'] });
+      prisma.school.findUnique.mockResolvedValue({ disabled_feature_rows: [{ feature: 'attendance' }] });
 
       const result = await service.getProfile(userId);
       expect(prisma.school.findUnique.mock.calls[0][0].where).toEqual({ id: 's1' });

@@ -321,6 +321,14 @@ describe('RubricService.assess', () => {
     ]);
   });
 
+  test('saving a rubric mark deletes the AI grading draft of that work', async () => {
+    const { service, prisma } = build();
+    await service.assess('user-1', 'act-1', 'stu-1', { assessments: [{ criterionId: 'c1', ratingId: 'r2' }] });
+    expect(prisma.ai_grading_draft.deleteMany.mock.calls[0][0]).toEqual({
+      where: { activity_id: 'act-1', student_id: { in: ['stu-1'] } },
+    });
+  });
+
   test('bare points and a teacher override', async () => {
     const { service } = build();
     const result = await service.assess('user-1', 'act-1', 'stu-1', {

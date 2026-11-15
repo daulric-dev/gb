@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@/auth/auth.guard';
 import { AdminGuard } from '@/auth/admin.guard';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { PermissionService } from './permission.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -44,12 +45,14 @@ export class PermissionController {
   }
 
   @Post('roles')
+  @RequireStepUp()
   createRole(@Req() req: any, @Body() dto: CreateRoleDto) {
     const userId: string = req.user.id;
     return this.permissionService.createRole(userId, dto);
   }
 
   @Patch('roles/:roleId')
+  @RequireStepUp()
   updateRole(
     @Req() req: any,
     @Param('roleId') roleId: string,
@@ -60,6 +63,7 @@ export class PermissionController {
   }
 
   @Delete('roles/:roleId')
+  @RequireStepUp()
   deleteRole(@Req() req: any, @Param('roleId') roleId: string) {
     const userId: string = req.user.id;
     return this.permissionService.deleteRole(userId, roleId);
@@ -72,6 +76,7 @@ export class PermissionController {
   }
 
   @Put('roles/:roleId/permissions')
+  @RequireStepUp()
   setRolePermissions(
     @Req() req: any,
     @Param('roleId') roleId: string,
@@ -88,6 +93,7 @@ export class PermissionController {
   }
 
   @Patch('members/:membershipId/base-role')
+  @RequireStepUp()
   changeMemberRole(
     @Req() req: any,
     @Param('membershipId') membershipId: string,
@@ -102,6 +108,7 @@ export class PermissionController {
   }
 
   @Post('members/:membershipId/roles')
+  @RequireStepUp()
   assignRole(
     @Req() req: any,
     @Param('membershipId') membershipId: string,
@@ -116,6 +123,7 @@ export class PermissionController {
   }
 
   @Delete('members/:membershipId/roles/:roleId')
+  @RequireStepUp()
   unassignRole(
     @Req() req: any,
     @Param('membershipId') membershipId: string,

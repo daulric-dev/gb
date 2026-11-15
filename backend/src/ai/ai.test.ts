@@ -14,7 +14,7 @@ import { AiOrgFeatureGuard } from './ai-feature.guard';
 import { AiProviderService, resolveSchoolProvider, selectProvider } from './ai-provider.service';
 import { AiService } from './ai.service';
 import { AiDraftsService, toDraft } from './ai-drafts.service';
-import { OrganisationAiController, CourseAiController } from './ai.controller';
+import { OrganisationAiController, CourseAiController, SchoolAiController } from './ai.controller';
 import { AiGateway } from './ai-gateway';
 import { redact, plainText } from './redact';
 import { validateSchema, providerSchema, SchemaError } from './json-schema';
@@ -374,6 +374,34 @@ describe('rubric feedback suggestions', () => {
     expect(((await rejected(drafts.rubricFeedback('t', ACTIVITY, { studentId: STUDENT }))) as HttpException).getStatus()).toBe(403);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  test("a student restricted from AI (no_ai): 403 AI_STUDENT_RESTRICTED, their work never read or sent", async () => {
+    const { drafts, fetch, prisma } = await rubricSetup(OUT, { allowWork: true });
+    prisma.student_restriction.findMany.mockResolvedValue([{ student_id: STUDENT }]);
+    const err = (await rejected(drafts.rubricFeedback('t', ACTIVITY, { studentId: STUDENT }))) as HttpException;
+    expect(err.getStatus()).toBe(403);
+    expect((err.getResponse() as { code: string }).code).toBe('AI_STUDENT_RESTRICTED');
+    expect(prisma.student_restriction.findMany.mock.calls[0][0].where).toMatchObject({
+      student_id: { in: [STUDENT] },
+      no_ai: true,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(prisma.submission.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("staff and guardians' names are redacted too", async () => {
+    const { drafts, calls, prisma } = await rubricSetup(OUT, { allowWork: true });
+    prisma.submission.findUnique.mockResolvedValue({
+      text_body: 'Mrs Priya Shah helped me, and my mum Carla Diaz read it.',
+      status: 'submitted',
+      student: { first_name: 'Amelia', last_name: 'Okafor' },
+    });
+    prisma.course_staff.findMany.mockResolvedValue([{ user_profile: { first_name: 'Priya', last_name: 'Shah' } }]);
+    prisma.parent_student_link.findMany.mockResolvedValue([{ user_profile: { first_name: 'Carla', last_name: 'Diaz' } }]);
+    await drafts.rubricFeedback('t', ACTIVITY, { studentId: STUDENT });
+    const sent = JSON.stringify(calls[0].body);
+    for (const s of ['Priya', 'Shah', 'Carla', 'Diaz']) expect(sent).not.toContain(s);
+  });
 });
 
 describe('page summary', () => {
@@ -412,6 +440,20 @@ describe('school settings', () => {
     await ai.updateSchoolSettings('admin', { allowStudentWork: true });
     expect(prisma.ai_school_setting.upsert.mock.calls[0][0].create).toMatchObject({ allow_student_work: true });
     expect(audit.record).toHaveBeenCalled();
+  });
+
+  test('allow sending uploaded files: off by default, its own switch, audited, and step-up to change', async () => {
+    const { ai, prisma, audit } = await build({});
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
+    prisma.ai_school_setting.findUnique.mockResolvedValue(null);
+    expect((await ai.getSchoolSettings('admin')).allowStudentFiles).toBe(false);
+    prisma.ai_school_setting.findUnique.mockResolvedValue({ allow_student_work: true, allow_student_files: false, provider_id: null });
+    await ai.updateSchoolSettings('admin', { allowStudentFiles: true });
+    expect(prisma.ai_school_setting.upsert.mock.calls[0][0].update).toMatchObject({ allow_student_work: true, allow_student_files: true });
+    const changes = JSON.stringify((audit.record.mock.calls[0] as any)[3].changes);
+    expect(changes).toContain('allow_student_files');
+    expect(Reflect.getMetadata(STEP_UP_KEY, SchoolAiController.prototype.update)).toBe(true);
+    expect((await ai.getSchoolSettings('admin')).notice).toContain('uploaded');
   });
 
   test('the sweep clears expired prompts and deletes year-old rows', async () => {

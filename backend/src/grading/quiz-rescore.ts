@@ -1,156 +1,166 @@
-import { Prisma } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
+import { questionCredit, stringList } from './quiz-questions';
 
-/**
- * One question's credit (0 to 1) and whether it waits for the teacher, for
- * a `q` (grading.quiz_question) and its `ans` (grading.quiz_answer, or null).
- * Word for word the LATERAL in grading.submit_quiz (latest definition:
- * prisma/migrations/20261117100000_quiz_question_types); quiz-rescore.test.ts
- * checks they match, so change both together. questionCredit() in
- * quiz-questions.ts is the same rules in TypeScript.
- */
-export const QUIZ_CREDIT = Prisma.sql`
-    SELECT (CASE
-      WHEN q.kind::text = 'short_answer' THEN CASE WHEN EXISTS (
-        SELECT 1
-        FROM grading.quiz_option o
-        WHERE o.question_id = q.id
-          AND o.is_correct
-          AND ans.text_answer IS NOT NULL
-          AND lower(btrim(ans.text_answer)) = lower(btrim(o.label))
-      ) THEN 1 ELSE 0 END
-      WHEN q.kind::text IN ('multiple_choice', 'true_false') THEN CASE WHEN EXISTS (
-        SELECT 1
-        FROM grading.quiz_option o
-        WHERE o.id = ans.option_id AND o.question_id = q.id AND o.is_correct
-      ) THEN 1 ELSE 0 END
-      WHEN q.kind::text = 'numeric' THEN CASE
-        WHEN ans.numeric_answer IS NOT NULL AND q.numeric_answer IS NOT NULL
-          AND abs(ans.numeric_answer - q.numeric_answer) <= q.numeric_tolerance
-        THEN 1 ELSE 0 END
-      WHEN q.kind::text = 'multiple_select' THEN (
-        SELECT CASE
-          WHEN ans.option_ids IS NULL OR count(*) FILTER (WHERE o.is_correct) = 0 THEN 0
-          WHEN q.partial_credit THEN greatest(0,
-            (count(*) FILTER (WHERE o.is_correct AND o.id = ANY (ans.option_ids))
-             - count(*) FILTER (WHERE NOT o.is_correct AND o.id = ANY (ans.option_ids)))::numeric
-            / count(*) FILTER (WHERE o.is_correct))
-          WHEN bool_and((o.id = ANY (ans.option_ids)) = o.is_correct) THEN 1
-          ELSE 0 END
-        FROM grading.quiz_option o
-        WHERE o.question_id = q.id
-      )
-      WHEN q.kind::text = 'matching' THEN (
-        SELECT CASE
-          WHEN ans.matches IS NULL OR count(*) = 0 THEN 0
-          WHEN q.partial_credit THEN
-            (count(*) FILTER (WHERE ans.matches ->> o.id::text = o.match_label))::numeric / count(*)
-          WHEN bool_and(coalesce(ans.matches ->> o.id::text = o.match_label, false)) THEN 1
-          ELSE 0 END
-        FROM grading.quiz_option o
-        WHERE o.question_id = q.id
-      )
-      WHEN q.kind::text = 'ordering' THEN (
-        SELECT CASE
-          WHEN ans.option_ids IS NULL OR count(*) = 0 THEN 0
-          WHEN q.partial_credit THEN
-            (count(*) FILTER (WHERE array_position(ans.option_ids, o.id) = o.place))::numeric / count(*)
-          WHEN bool_and(coalesce(array_position(ans.option_ids, o.id) = o.place, false)) THEN 1
-          ELSE 0 END
-        FROM (
-          SELECT o2.id, row_number() OVER (ORDER BY o2.sort_order, o2.id)::integer AS place
-          FROM grading.quiz_option o2
-          WHERE o2.question_id = q.id
-        ) o
-      )
-      WHEN q.kind::text IN ('essay', 'file_upload') THEN CASE
-        WHEN ans.manual_points IS NULL OR q.points <= 0 THEN 0
-        ELSE least(ans.manual_points, q.points) / q.points END
-      ELSE 0
-    END)::numeric AS credit,
-    (q.kind::text IN ('essay', 'file_upload')
-      AND ans.manual_points IS NULL
-      AND (nullif(btrim(ans.text_answer), '') IS NOT NULL OR ans.file_id IS NOT NULL)) AS unmarked
-`;
+export type ScoredQuiz = {
+  score: number;
+  points: number;
+  attempts_used: number;
+  status: 'submitted' | 'graded';
+};
 
-/**
- * The statement rescoreQuizFromAnswers runs. Exported for its test.
- *
- * The questions of each submission are its attempt's own
- * (grading.quiz_attempt_question) when it has them, else the quiz's - the
- * same set submit_quiz scores.
- */
-export function rescoreSql(
-  activityId: string,
-  points: number,
-  submissionId: string | null = null,
-) {
-  return Prisma.sql`
-    update grading.submission s
-    set score = case
-          when t.possible > 0 then (t.earned / t.possible) * ${points}::numeric
-          else 0
-        end,
-        raw_score = case
-          when t.possible > 0 then (t.earned / t.possible) * ${points}::numeric
-          else 0
-        end,
-        status = case when t.unmarked > 0 then 'submitted'::grading.submission_status
-                      else 'graded'::grading.submission_status end,
-        graded_at = case when t.unmarked > 0 then null else coalesce(s.graded_at, now()) end,
-        updated_at = now()
-    from (
-      select s2.id,
-             coalesce(sum(q.points), 0) as possible,
-             coalesce(sum(q.points * correct.credit), 0) as earned,
-             count(*) filter (where correct.unmarked) as unmarked
-      from grading.submission s2
-      left join grading.quiz_question q
-        on q.id in (
-             select aq.question_id from grading.quiz_attempt_question aq
-             where aq.submission_id = s2.id
-           )
-        or (q.activity_id = s2.activity_id and not exists (
-             select 1 from grading.quiz_attempt_question aq
-             where aq.submission_id = s2.id
-           ))
-      left join grading.quiz_answer ans
-        on ans.question_id = q.id and ans.submission_id = s2.id
-      left join lateral (${QUIZ_CREDIT}) correct on true
-      where s2.activity_id = ${activityId}::uuid
-        and (${submissionId}::uuid is null or s2.id = ${submissionId}::uuid)
-        and s2.graded_by is null
-        and s2.score is not null
-        and s2.quiz_started_at is null
-      group by s2.id
-    ) t
-    where s.id = t.id
-  `;
+/** Score a saved attempt with the same TypeScript rules used in quiz views. */
+export async function scoreQuizSubmission(
+  tx: Prisma.TransactionClient,
+  submissionId: string,
+  pointsOverride?: number,
+  submittedAttempt?: { startedAt: Date; attemptsUsed: number },
+): Promise<ScoredQuiz | null> {
+  const submission = await tx.submission.findUnique({
+    where: { id: submissionId },
+    select: {
+      id: true,
+      activity_id: true,
+      attempt_count: true,
+      quiz_started_at: true,
+      graded_at: true,
+      activity: { select: { points: true } },
+    },
+  });
+  if (!submission) return null;
+
+  const attempt = await tx.quiz_attempt_question.findMany({
+    where: { submission_id: submissionId },
+    select: { question_id: true },
+  });
+  const questions = await tx.quiz_question.findMany({
+    where: attempt.length
+      ? { id: { in: attempt.map((row) => row.question_id) } }
+      : { activity_id: submission.activity_id },
+    select: {
+      id: true,
+      kind: true,
+      points: true,
+      numeric_answer: true,
+      numeric_tolerance: true,
+      partial_credit: true,
+    },
+  });
+  const questionIds = questions.map((question) => question.id);
+  const [options, answers] = questionIds.length
+    ? await Promise.all([
+        tx.quiz_option.findMany({
+          where: { question_id: { in: questionIds } },
+          select: { id: true, question_id: true, label: true, is_correct: true, match_label: true },
+          orderBy: { sort_order: 'asc' },
+        }),
+        tx.quiz_answer.findMany({
+          where: { submission_id: submissionId, question_id: { in: questionIds } },
+          select: {
+            question_id: true,
+            option_id: true,
+            option_ids: true,
+            matches: true,
+            text_answer: true,
+            numeric_answer: true,
+            file_id: true,
+            manual_points: true,
+          },
+        }),
+      ])
+    : [[], []];
+
+  const answerByQuestion = new Map(answers.map((answer) => [answer.question_id, answer]));
+  let possible = 0;
+  let earned = 0;
+  let unmarked = false;
+  for (const question of questions) {
+    const points = Number(question.points);
+    possible += points;
+    const answer = answerByQuestion.get(question.id);
+    const matches = answer?.matches;
+    const result = questionCredit(
+      {
+        kind: question.kind,
+        points,
+        numericAnswer: question.numeric_answer === null ? null : Number(question.numeric_answer),
+        numericTolerance: Number(question.numeric_tolerance ?? 0),
+        partialCredit: question.partial_credit,
+        options: options
+          .filter((option) => option.question_id === question.id)
+          .map((option) => ({
+            id: option.id,
+            label: option.label,
+            isCorrect: option.is_correct,
+            matchLabel: option.match_label,
+          })),
+      },
+      answer
+        ? {
+            optionId: answer.option_id,
+            optionIds: stringList(answer.option_ids),
+            matches:
+              matches && typeof matches === 'object'
+                ? (matches as Record<string, string>)
+                : null,
+            text: answer.text_answer,
+            numeric: answer.numeric_answer === null ? null : Number(answer.numeric_answer),
+            fileId: answer.file_id,
+            manualPoints: answer.manual_points === null ? null : Number(answer.manual_points),
+          }
+        : null,
+    );
+    earned += points * result.credit;
+    unmarked ||= result.needsMarking;
+  }
+
+  const points = pointsOverride ?? Number(submission.activity.points);
+  const score = possible > 0 ? (earned / possible) * points : 0;
+  const status = unmarked ? 'submitted' : 'graded';
+  const attemptsUsed = submittedAttempt?.attemptsUsed ?? submission.attempt_count;
+  const now = new Date();
+  const data: Prisma.submissionUpdateInput = {
+    status,
+    graded_at: unmarked ? null : submittedAttempt ? now : submission.graded_at ?? now,
+    score,
+    raw_score: score,
+    updated_at: now,
+  };
+  if (submittedAttempt) {
+    Object.assign(data, {
+      submitted_at: now,
+      attempt_started_at: submittedAttempt.startedAt,
+      attempt_count: submittedAttempt.attemptsUsed,
+      quiz_started_at: null,
+      quiz_expires_at: null,
+      is_away: false,
+    });
+  }
+  await tx.submission.update({
+    where: { id: submissionId },
+    data,
+  });
+  return { score, points, attempts_used: attemptsUsed, status };
 }
 
-/**
- * Score a quiz's automatically marked submissions again from their stored
- * answers, against `points`, in the caller's transaction - all of them, or
- * the one `submissionId`. Used when a quiz goes from 0 points to more
- * (every automatic score was 0 then, so there is no fraction to rescale),
- * and after a teacher marks an essay or file question.
- *
- * Mirrors grading.submit_quiz: earned / possible * points over the
- * attempt's questions, 0 when they are worth nothing; a submission with an
- * answered essay or file question not yet marked stays `submitted` (needs
- * marking), otherwise it is `graded`. Writes raw_score (before any late
- * penalty) and score alike; the caller applies the late policy afterwards
- * (refreshLateness).
- *
- * Only submissions submit_quiz scored and nobody marked as a whole since
- * (`graded_by` null, `score` set) and with no attempt in progress: starting
- * a retake clears the answers, so an open attempt's answers are not the ones
- * its score came from. Returns how many submissions were updated.
- */
+/** Recalculate eligible automatic scores after question marks or point changes. */
 export async function rescoreQuizFromAnswers(
-  tx: Pick<Prisma.TransactionClient, '$executeRaw'>,
+  tx: Prisma.TransactionClient,
   activityId: string,
   points: number,
   submissionId: string | null = null,
 ): Promise<number> {
-  return tx.$executeRaw(rescoreSql(activityId, points, submissionId));
+  const submissions = await tx.submission.findMany({
+    where: {
+      activity_id: activityId,
+      ...(submissionId ? { id: submissionId } : {}),
+      graded_by: null,
+      score: { not: null },
+      quiz_started_at: null,
+    },
+    select: { id: true },
+  });
+  for (const submission of submissions) {
+    await scoreQuizSubmission(tx, submission.id, points);
+  }
+  return submissions.length;
 }

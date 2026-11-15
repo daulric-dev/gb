@@ -23,6 +23,8 @@ import { SignedInDevices } from "@/features/account/SignedInDevices";
 import { SwitchSchool } from "@/features/account/SwitchSchool";
 import { CheckForUpdates } from "@/features/app-update/CheckForUpdates";
 import { userMessage } from "@/lib/errors";
+import { openWebAccountSettings } from "@/lib/privacy-link";
+import { NotificationPreferencesCard } from "@/features/notifications/NotificationPreferencesCard";
 import {
   blockerHint,
   blockersFromError,
@@ -247,6 +249,14 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
               Role: {capitalize(profile.role)}
             </Text>
           ) : null}
+          {/* Changing it needs "Confirm it's you" and a code to the new
+              address; the app has no step-up yet, so it is done on the web. */}
+          <Text variant="muted" style={{ fontSize: 12 }}>
+            To change the email address you sign in with, use account settings on the website.
+          </Text>
+          <Button variant="outline" size="sm" onPress={openWebAccountSettings} style={{ alignSelf: "flex-start" }}>
+            Change email (opens the website)
+          </Button>
           <Button onPress={saveProfile} loading={saving} disabled={!hasChanges}>
             Save Changes
           </Button>
@@ -291,6 +301,8 @@ export function AccountSettingsScreen({ onBack }: { onBack?: () => void }) {
       </View>
 
       <SignedInDevices refreshKey={refreshKey} />
+
+      <NotificationPreferencesCard refreshKey={refreshKey} />
 
       <CheckForUpdates />
 

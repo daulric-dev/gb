@@ -15,8 +15,12 @@ import { authCookieSecure } from '@/config/origins';
  */
 export const SCAN_DEVICE_COOKIE = 'gb_scan_device';
 
-/** A year: the id is not a credential, just a stable label for the device. */
-const SCAN_DEVICE_MAX_AGE_S = 365 * 24 * 60 * 60;
+/**
+ * 90 days, refreshed on each scan. The id is not a credential, just a stable
+ * label for the device; a term's worth of scans is all it needs to cover, so
+ * it is not kept longer (data minimisation).
+ */
+export const SCAN_DEVICE_MAX_AGE_S = 90 * 24 * 60 * 60;
 
 const DEVICE_ID = /^[A-Za-z0-9_-]{22,64}$/;
 

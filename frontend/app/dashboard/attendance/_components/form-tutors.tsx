@@ -145,8 +145,8 @@ export function FormTutorsCard() {
                       checked={selected.value.has(s.id)}
                       onChange={(e) => toggle(s.id, e.target.checked)}
                     />
-                    <span className="min-w-0 flex-1 truncate">{personName(s)}</span>
-                    <span className="truncate text-xs text-muted-foreground">
+                    <span className="min-w-0 flex-1 truncate" translate="no">{personName(s)}</span>
+                    <span className="truncate text-xs text-muted-foreground" translate={s.formTutorId ? "no" : undefined}>
                       {s.formTutorId ? (staffName.get(s.formTutorId) ?? "Former staff") : "No form tutor"}
                     </span>
                   </label>

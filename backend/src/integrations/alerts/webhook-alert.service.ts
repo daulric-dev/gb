@@ -3,7 +3,11 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { MailService } from '@/mail/mail.service';
 import { primaryOrigin } from '@/config/origins';
 import { SsoAlertService } from '@/sso/sso-alert.service';
-import { webhookDisabledEmail, webhookTlsDisabledEmail } from '@/integrations/alerts/webhook-alert.email';
+import {
+  webhookDisabledEmail,
+  webhookPlainHttpEmail,
+  webhookTlsDisabledEmail,
+} from '@/integrations/alerts/webhook-alert.email';
 
 /**
  * Emails the school's admin and every organisation admin when a webhook
@@ -28,6 +32,13 @@ export class WebhookAlertService {
   ): Promise<void> {
     await this.sendAll(schoolId, 'webhook switched-off', (school, settingsUrl) =>
       webhookDisabledEmail({ school, webhook: webhook.name, failures, at, settingsUrl }),
+    );
+  }
+
+  /** A delivery was refused because the webhook's URL is plain http; the webhook was switched off. */
+  async plainHttpRefused(schoolId: string, webhook: { id: string; name: string }, at = new Date()): Promise<void> {
+    await this.sendAll(schoolId, 'plain-http refusal', (school, settingsUrl) =>
+      webhookPlainHttpEmail({ school, webhook: webhook.name, at, settingsUrl }),
     );
   }
 
@@ -60,7 +71,7 @@ export class WebhookAlertService {
       for (const r of recipients) {
         const settingsUrl = r.orgAdmin
           ? `${origin}/organisation/schools/${schoolId}#integrations`
-          : `${origin}/dashboard/settings#integrations`;
+          : `${origin}/dashboard/settings?tab=sign-in#integrations`;
         const message = build(school?.name ?? 'your school', settingsUrl);
         try {
           await this.mail.send({ to: r.email, ...message });

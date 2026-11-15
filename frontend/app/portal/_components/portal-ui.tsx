@@ -90,7 +90,7 @@ export function WorkStatusBadge({ item }: { item: WorkLike }) {
   if (s?.excused) return <Badge variant="outline">Excused</Badge>;
   if (s?.status === "graded") {
     return (
-      <Badge>
+      <Badge translate="no">
         {formatScore(s.score)}/{formatScore(item.points)}
       </Badge>
     );

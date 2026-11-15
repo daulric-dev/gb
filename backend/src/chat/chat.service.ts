@@ -447,7 +447,7 @@ export class ChatService {
     const rows = await this.membershipsOf(userId, schoolId);
     if (rows.length === 0) return { count: 0 };
 
-    // The RPC counts every conversation; only the active school's count.
+    // Only the active school's conversations count.
     const counts = await this.unreadCountsFor(userId, rows);
     let total = 0;
     for (const m of rows) total += counts.get(m.conversation_id) ?? 0;
@@ -1080,10 +1080,12 @@ export class ChatService {
   }
 
   /**
-   * The newest message of each conversation in one round-trip: a LATERAL
-   * LIMIT 1 per id, which walks idx_message_conversation (conversation_id,
-   * created_at DESC) rather than every message. Falls back to one query per
-   * conversation if the raw query fails.
+   * The newest message of each conversation in a fixed number of queries
+   * whatever the number of conversations: the newest `created_at` per
+   * conversation (a grouped max over idx_message_conversation), then those
+   * rows. Same order as `lastMessageFor` (created_at DESC NULLS FIRST): a
+   * message without a timestamp wins, and exact ties go to the lowest id. Falls
+   * back to one query per conversation if the batch fails.
    */
   private async lastMessagesFor(
     conversationIds: string[],
@@ -1091,21 +1093,46 @@ export class ChatService {
     const map = new Map<string, ChatMessage>();
     if (conversationIds.length === 0) return map;
     try {
-      const rows = await this.prisma.$queryRaw<
-        Parameters<typeof toMessageRow>[0][]
-      >`
-        SELECT m.id, m.conversation_id, m.sender_id, m.type::text AS type,
-               m.body, m.metadata, m.action_state::text AS action_state,
-               m.created_at, m.edited_at, m.deleted_at
-        FROM unnest(${conversationIds}::uuid[]) AS c(id)
-        CROSS JOIN LATERAL (
-          SELECT * FROM chat.message
-          WHERE conversation_id = c.id
-          ORDER BY created_at DESC NULLS FIRST
-          LIMIT 1
-        ) m`;
-      for (const row of rows) {
-        map.set(row.conversation_id, this.presentMessage(toMessageRow(row)));
+      const [newest, undated] = await Promise.all([
+        this.prisma.message.groupBy({
+          by: ['conversation_id'],
+          where: { conversation_id: { in: conversationIds } },
+          _max: { created_at: true },
+        }),
+        this.prisma.message.findMany({
+          where: { conversation_id: { in: conversationIds }, created_at: null },
+          orderBy: { id: 'asc' },
+          select: MESSAGE_SELECT,
+        }),
+      ]);
+      const picked = new Map<string, (typeof undated)[number]>();
+      for (const row of undated) {
+        if (!picked.has(row.conversation_id)) picked.set(row.conversation_id, row);
+      }
+      const latest = newest.filter(
+        (g) => !picked.has(g.conversation_id) && g._max.created_at,
+      );
+      if (latest.length > 0) {
+        // A range, not equality: the max comes back at JavaScript's
+        // millisecond precision while the column keeps microseconds, so
+        // match the last millisecond or so and let the database order those
+        // few rows at full precision.
+        const rows = await this.prisma.message.findMany({
+          where: {
+            OR: latest.map((g) => ({
+              conversation_id: g.conversation_id,
+              created_at: { gte: new Date(g._max.created_at!.getTime() - 1) },
+            })),
+          },
+          orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
+          select: MESSAGE_SELECT,
+        });
+        for (const row of rows) {
+          if (!picked.has(row.conversation_id)) picked.set(row.conversation_id, row);
+        }
+      }
+      for (const [id, row] of picked) {
+        map.set(id, this.presentMessage(toMessageRow(row)));
       }
       return map;
     } catch (err) {
@@ -1122,22 +1149,48 @@ export class ChatService {
     }
   }
 
+  /**
+   * Unread messages per membership in one grouped count: messages from
+   * someone else, not deleted, newer than the member's read marker (all of
+   * them when the member has never read the conversation). Every membership
+   * passed gets an entry, 0 when nothing is unread. Falls back to one count
+   * per conversation if the grouped query fails.
+   */
   private async unreadCountsFor(
     userId: string,
     memberships: { conversation_id: string; last_read_at: string | null }[],
   ): Promise<Map<string, number>> {
+    const map = new Map<string, number>(
+      memberships.map((m) => [m.conversation_id, 0]),
+    );
+    if (memberships.length === 0) return map;
+    const neverRead = memberships
+      .filter((m) => !m.last_read_at)
+      .map((m) => m.conversation_id);
+    const scopes = [
+      ...(neverRead.length > 0 ? [{ conversation_id: { in: neverRead } }] : []),
+      ...memberships
+        .filter((m) => m.last_read_at)
+        .map((m) => ({
+          conversation_id: m.conversation_id,
+          created_at: { gt: new Date(m.last_read_at!) },
+        })),
+    ];
     try {
-      const data = await this.prisma.$queryRaw<
-        { conversation_id: string; unread: bigint | number }[]
-      >`SELECT conversation_id, unread FROM chat.unread_counts(${userId}::uuid)`;
-      const map = new Map<string, number>();
-      for (const row of data) {
-        map.set(row.conversation_id, Number(row.unread) || 0);
+      const rows = await this.prisma.message.groupBy({
+        by: ['conversation_id'],
+        where: { sender_id: { not: userId }, deleted_at: null, OR: scopes },
+        _count: { _all: true },
+      });
+      for (const row of rows) {
+        if (map.has(row.conversation_id)) {
+          map.set(row.conversation_id, row._count._all);
+        }
       }
       return map;
     } catch (err) {
       this.logger.warn(
-        `unread_counts RPC unavailable, falling back to per-conversation counts: ${String(err)}`,
+        `grouped unread count failed, falling back to per-conversation counts: ${String(err)}`,
       );
       const entries = await Promise.all(
         memberships.map(

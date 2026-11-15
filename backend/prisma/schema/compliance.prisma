@@ -9,7 +9,7 @@ model erasure_log {
   occurred_at   DateTime  @default(now()) @db.Timestamptz(6)
   kind          String
   subject_table String
-  subject_ids   String[]  @db.Uuid
+  subject_ids   Json
   school_id     String?   @db.Uuid
   actor         String
   reason        String

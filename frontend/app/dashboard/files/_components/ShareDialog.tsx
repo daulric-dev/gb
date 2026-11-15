@@ -197,7 +197,7 @@ export function ShareDialog({
     >
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="truncate pr-8">Share “{file?.name}”</DialogTitle>
+          <DialogTitle className="truncate pr-8" translate="no">Share “{file?.name}”</DialogTitle>
           <DialogDescription>
             Recipients can view the file. Toggle “Download” to also let them save
             a copy.
@@ -282,7 +282,7 @@ export function ShareDialog({
                     className="flex items-center gap-2 rounded-md border px-3 py-2"
                   >
                     <Icon className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate text-sm">
+                    <span className="flex-1 truncate text-sm" translate="no">
                       {principalName(share)}
                     </span>
                     <div className="flex items-center gap-1.5">

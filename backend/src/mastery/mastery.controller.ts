@@ -18,6 +18,8 @@ import {
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { FeatureGuard } from '@/features/feature.guard';
 import { RequireFeature } from '@/features/require-feature.decorator';
 import { PermissionGuard } from '@/permission/permission.guard';
@@ -154,6 +156,7 @@ export class MasteryCourseController {
   constructor(
     private readonly mastery: MasteryService,
     private readonly outcomes: OutcomeService,
+    private readonly audit: AuditLogService,
   ) {}
 
   @Get('outcomes')
@@ -206,10 +209,18 @@ export class MasteryCourseController {
     return this.mastery.grid(req.user.id as string, courseId);
   }
 
+  /** Bulk export of personal data: step-up, and audited with its row count. */
   @Get('mastery/export')
   @ApiProduces('text/csv')
+  @RequireStepUp()
   async export(@Req() req: any, @Param('courseId', ParseUUIDPipe) courseId: string, @Res() reply: FastifyReply) {
     const out = await this.mastery.exportCsv(req.user.id as string, courseId);
+    await this.audit.recordExport(req.user.id as string, {
+      courseId,
+      entity: 'mastery',
+      scope: 'course',
+      csv: out.csv,
+    });
     void reply
       .header('Content-Type', 'text/csv; charset=utf-8')
       .header('Content-Disposition', contentDisposition('attachment', out.filename))

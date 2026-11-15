@@ -18,7 +18,7 @@ model ai_provider {
   api_key_last4 String
   /// Requests per calendar month (UTC) through this provider; null = no cap.
   monthly_cap   Int?
-  /// Exactly one provider is the default (partial unique index ai_provider_one_default, in the migration).
+  /// Exactly one provider is the default (partial unique index ai_provider_one_default).
   is_default    Boolean      @default(false)
   /// The organisation runs this provider on its own private network (a local
   /// Ollama / vLLM server): the SSRF guard allows private / loopback addresses
@@ -58,10 +58,13 @@ model ai_org_setting {
 /// feedback suggestions (off by default). provider_id: the school's choice
 /// among the organisation's providers that are available to schools; null
 /// (or a choice that is no longer available) = the organisation default.
-/// Set null when the provider is deleted.
+/// Set null when the provider is deleted. allow_student_files: whether the
+/// text read from files students uploaded may be sent for AI grading drafts
+/// (src/ai/file-grading); off by default and needs allow_student_work too.
 model ai_school_setting {
   school_id          String       @id @db.Uuid
   allow_student_work Boolean      @default(false)
+  allow_student_files Boolean     @default(false)
   provider_id        String?      @db.Uuid
   updated_by         String?      @db.Uuid
   updated_at         DateTime     @default(now()) @db.Timestamptz(6)
@@ -109,4 +112,86 @@ model ai_request {
   @@index([provider_id, created_at], map: "idx_ai_request_provider")
   @@index([created_at], map: "idx_ai_request_created")
   @@schema("public")
+}
+
+/// An AI grading draft for one student's handed-in work on one assignment
+/// (src/ai/file-grading). Teacher-only and never applied on its own: the
+/// teacher reviews it and saves a mark through the normal grading routes,
+/// which delete it (as does a new submission's grading, the student's
+/// no_ai restriction, the student's erasure and the retention purge after
+/// AI_GRADING_DRAFT_RETENTION_DAYS). One draft per activity and student;
+/// asking again replaces it.
+/// status: queued | running | ready | failed | skipped | cancelled.
+/// mode: rubric | score. files: the per-file read report
+/// ([{ fileId, name, status: read | truncated | unreadable | skipped, reason,
+/// chars, pages }]). suggestions: the cleaned draft (levels / score,
+/// comments, checklist, evidence quotes that were found in the work).
+/// Holds no prompt text; the extracted text is never stored.
+model ai_grading_draft {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activity_id   String            @db.Uuid
+  student_id    String            @db.Uuid
+  submission_id String            @db.Uuid
+  school_id     String            @db.Uuid
+  batch_id      String?           @db.Uuid
+  status        String            @default("queued")
+  mode          String
+  files         Json              @default("[]")
+  suggestions   Json?
+  /// Characters of extracted text sent (after redaction and truncation).
+  chars_sent    Int?
+  truncated     Boolean           @default(false)
+  provider_name String?
+  model         String?
+  /// The ai_request row (no foreign key: the log has its own retention).
+  request_id    String?           @db.Uuid
+  /// Machine code of a failure or skip (AI_STUDENT_RESTRICTED, NOTHING_READABLE, ...).
+  error_code    String?
+  error         String?
+  /// The submission's submitted_at when the draft was made (newer work => stale).
+  work_submitted_at DateTime?     @db.Timestamptz(6)
+  created_by    String?           @db.Uuid
+  created_at    DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime          @default(now()) @db.Timestamptz(6)
+  finished_at   DateTime?         @db.Timestamptz(6)
+  activity      activity          @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student       student           @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  submission    submission        @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  batch         ai_grading_batch? @relation(fields: [batch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  creator       user_profile?     @relation("ai_grading_draft_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([activity_id, student_id], map: "ai_grading_draft_activity_student_key")
+  @@index([student_id], map: "idx_ai_grading_draft_student")
+  @@index([submission_id], map: "idx_ai_grading_draft_submission")
+  @@index([batch_id, status], map: "idx_ai_grading_draft_batch")
+  @@index([created_by], map: "idx_ai_grading_draft_created_by")
+  @@index([created_at], map: "idx_ai_grading_draft_created")
+  @@schema("grading")
+}
+
+/// A "Draft for all ungraded" run on one assignment: one queued draft (job)
+/// per submission. status: running | done | cancelled. Counts are what the
+/// teacher confirmed; per-student progress is on the drafts.
+model ai_grading_batch {
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activity_id   String             @db.Uuid
+  school_id     String             @db.Uuid
+  status        String             @default("running")
+  provider_name String
+  model         String
+  total         Int                @default(0)
+  files         Int                @default(0)
+  created_by    String?            @db.Uuid
+  created_at    DateTime           @default(now()) @db.Timestamptz(6)
+  finished_at   DateTime?          @db.Timestamptz(6)
+  cancelled_by  String?            @db.Uuid
+  cancelled_at  DateTime?          @db.Timestamptz(6)
+  activity      activity           @relation(fields: [activity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  creator       user_profile?      @relation("ai_grading_batch_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  drafts        ai_grading_draft[]
+
+  @@index([activity_id, created_at], map: "idx_ai_grading_batch_activity")
+  @@index([created_by], map: "idx_ai_grading_batch_created_by")
+  @@index([created_at], map: "idx_ai_grading_batch_created")
+  @@schema("grading")
 }

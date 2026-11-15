@@ -33,6 +33,7 @@ import {
   type RosterJobData,
 } from './rostering.constants';
 import type { ListChangesQueryDto } from './dto/rostering.dto';
+import { textSearch } from '@/common/text-search';
 
 const ACTIVE = ['planning', 'queued', 'applying'];
 
@@ -466,8 +467,8 @@ export class RosterRunService {
       ...(q.search?.trim()
         ? {
             OR: [
-              { label: { contains: q.search.trim(), mode: 'insensitive' } },
-              { sourced_id: { contains: q.search.trim(), mode: 'insensitive' } },
+              { label: textSearch.contains(q.search.trim()) },
+              { sourced_id: textSearch.contains(q.search.trim()) },
             ],
           }
         : {}),
@@ -498,7 +499,7 @@ export class RosterRunService {
         schoolId: r.school_id,
         label: r.label,
         diff: r.diff,
-        errors: r.errors,
+        errors: jsonStringList(r.errors),
         status: r.status,
         applyError: r.apply_error,
         appliedAt: r.applied_at?.toISOString() ?? null,
@@ -517,11 +518,15 @@ export class RosterRunService {
     const lines = [['entity', 'action', 'source_id', 'record', 'status', 'error'].join(',')];
     for (const r of rows) {
       lines.push(
-        [r.entity, r.action, r.sourced_id, r.label, r.status, [...r.errors, r.apply_error].filter(Boolean).join('; ')]
+        [r.entity, r.action, r.sourced_id, r.label, r.status, [...jsonStringList(r.errors), r.apply_error].filter(Boolean).join('; ')]
           .map(csvCell)
           .join(','),
       );
     }
     return `${lines.join('\r\n')}\r\n`;
   }
+}
+
+function jsonStringList(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 interface Linked {
   studentId: string;
@@ -74,8 +75,8 @@ export function ParentJoinForm({ token }: { token?: string | null }) {
         <CardHeader>
           <CardTitle>You are linked</CardTitle>
           <CardDescription>
-            You can now follow {personName(linked.child, "your child")}
-            {linked.school.name ? ` at ${linked.school.name}` : ""}.
+            You can now follow <NoTranslate>{personName(linked.child, "your child")}</NoTranslate>
+            {linked.school.name ? <> at <NoTranslate>{linked.school.name}</NoTranslate></> : ""}.
           </CardDescription>
         </CardHeader>
         <CardContent>

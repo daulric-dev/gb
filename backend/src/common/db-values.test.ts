@@ -4,6 +4,7 @@ import {
   dateOnly,
   isForeignKeyViolation,
   isNotFound,
+  isNotNullViolation,
   isoDate,
   isUniqueViolation,
   num,
@@ -82,18 +83,20 @@ describe('isUniqueViolation', () => {
     expect(isUniqueViolation(known('P2002'))).toBe(true);
   });
 
-  test('true for a raw SQLSTATE 23505 in meta.code', () => {
-    expect(isUniqueViolation(known('P2010', { code: '23505' }))).toBe(true);
+  test('true for provider duplicate-key errors', () => {
+    for (const code of ['23505', 'ER_DUP_ENTRY', '1062', '2601', '2627', 'SQLITE_CONSTRAINT_UNIQUE', 'SQLITE_CONSTRAINT_PRIMARYKEY', '2067', '1555']) {
+      expect(isUniqueViolation({ code })).toBe(true);
+    }
   });
 
-  test('true for a driver-adapter error carrying 23505', () => {
+  test('true for a driver-adapter error carrying a provider code', () => {
     const err = {
-      meta: { driverAdapterError: { cause: { originalCode: '23505' } } },
+      meta: { driverAdapterError: { cause: { originalCode: 'ER_DUP_ENTRY' } } },
     };
     expect(isUniqueViolation(err)).toBe(true);
   });
 
-  test('true for a plain pg error with code 23505', () => {
+  test('true for a plain driver error with code 23505', () => {
     expect(isUniqueViolation({ code: '23505' })).toBe(true);
   });
 
@@ -113,15 +116,26 @@ describe('isUniqueViolation', () => {
 });
 
 describe('isForeignKeyViolation', () => {
-  test('true for Prisma P2003 and SQLSTATE 23503', () => {
+  test('true for Prisma and provider foreign-key errors', () => {
     expect(isForeignKeyViolation(known('P2003'))).toBe(true);
-    expect(isForeignKeyViolation(known('P2010', { code: '23503' }))).toBe(true);
-    expect(isForeignKeyViolation({ code: '23503' })).toBe(true);
+    for (const code of ['23503', 'ER_NO_REFERENCED_ROW_2', '1452', '547', 'SQLITE_CONSTRAINT_FOREIGNKEY', '787']) {
+      expect(isForeignKeyViolation({ code })).toBe(true);
+    }
   });
 
   test('false for a unique violation', () => {
     expect(isForeignKeyViolation(known('P2002'))).toBe(false);
     expect(isForeignKeyViolation({ code: '23505' })).toBe(false);
+  });
+});
+
+describe('isNotNullViolation', () => {
+  test('recognizes Prisma and relational provider not-null errors', () => {
+    expect(isNotNullViolation(known('P2011'))).toBe(true);
+    for (const code of ['23502', 'ER_BAD_NULL_ERROR', '1048', '515', 'SQLITE_CONSTRAINT_NOTNULL', '1299']) {
+      expect(isNotNullViolation({ code })).toBe(true);
+    }
+    expect(isNotNullViolation(known('P2002'))).toBe(false);
   });
 });
 

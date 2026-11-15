@@ -12,7 +12,6 @@ import type { OrganisationFeature } from "@/lib/features";
 import { ORGANISATION_PATH } from "@/lib/routing";
 import {
   ENGINE_INFO,
-  TRANSLATION_ENGINES,
   translationOrgApi,
   type OrgTranslationSettings,
   type OrgTranslationUpdate,
@@ -26,6 +25,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { OrgHeader } from "../_components/org-header";
+
+/** Recommended first. Google and Yandex are listed only where the server allows them. */
+const ENGINE_ORDER: TranslationEngine[] = ["libre", "deepl", "google", "yandex"];
 
 const RADIO_CARD =
   "flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm font-normal has-data-checked:border-primary has-data-checked:bg-primary/5";
@@ -85,6 +87,13 @@ export default function TranslationSettingsPage() {
   }, [fill, loadFailed, featureOn]);
 
   const info = ENGINE_INFO[engine.value];
+  const uncontractedAllowed = !!saved.value?.uncontractedEnginesAllowed;
+  // Google and Yandex: offered only where the server allows them; a saved one
+  // stays listed so the admin can see it (and switch it off or away).
+  const engines = ENGINE_ORDER.filter(
+    (e) => !ENGINE_INFO[e].uncontracted || uncontractedAllowed || saved.value?.engine === e,
+  );
+  const engineRefused = info.uncontracted && !uncontractedAllowed;
   const libre = engine.value === "libre";
   const trimmedUrl = url.value.trim();
   const httpUrl = /^http:\/\//i.test(trimmedUrl);
@@ -94,7 +103,8 @@ export default function TranslationSettingsPage() {
   const keepsSavedKey = !!saved.value?.hasKey && !clearKey.value && engine.value === saved.value.engine;
   const hasUsableKey = !!key.value.trim() || keepsSavedKey;
   const keyOk = !info.needsKey || hasUsableKey;
-  const ready = !!saved.value && urlOk && keyOk;
+  // A refused engine can still be saved switched off (to turn translation off), never on.
+  const ready = !!saved.value && urlOk && keyOk && !(engineRefused && enabled.value);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -153,14 +163,33 @@ export default function TranslationSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>What is sent, and where</CardTitle>
-          <CardDescription>
-            When someone picks a language other than English, the text of each page they view is
-            sent to this service: menus and labels, and course content such as pages, assignments,
-            quiz questions and announcements, along with any names and comments shown on the page.
-            What people type is never sent. For student data, prefer a self-hosted LibreTranslate
-            server so text never leaves your network. Translations are machine made and may be
-            wrong; teachers can also make a translated draft of an assignment or quiz to review
-            before publishing.
+          <CardDescription className="space-y-2">
+            <span className="block">
+              Nothing is translated until a person chooses another language. People whose device
+              is set to a supported language are asked once (&ldquo;Translate GradeBook into
+              &hellip;?&rdquo;) and told which service the text goes to; their answer is kept in
+              their browser.
+            </span>
+            <span className="block">
+              While a language is chosen, GradeBook&rsquo;s server sends this service the visible
+              text of each page they open: menus, labels and buttons, and course content such as
+              pages, assignments, quiz questions, announcements and discussion topics.
+            </span>
+            <span className="block">
+              Left out (shown untranslated): anything typed into a form; chat and messages;
+              pastoral notes and student record pages; analytics and audit pages; and elements
+              marked as personal, such as people&rsquo;s names and avatars, marks and grades,
+              feedback and comments, discussion replies, email addresses, school names and course
+              codes. Personal details written inside course content itself (for example a name in
+              an announcement) are still sent. Teachers can also make a translated draft of an
+              assignment or quiz to review before publishing; that sends only the activity&rsquo;s
+              own text.
+            </span>
+            <span className="block">
+              Recommended: a self-hosted LibreTranslate server, so text never leaves your network,
+              or DeepL with a signed data processing agreement. Translations are machine made and
+              may be wrong.
+            </span>
           </CardDescription>
         </CardHeader>
       </Card>
@@ -173,6 +202,16 @@ export default function TranslationSettingsPage() {
             Features
           </Link>{" "}
           as well as enabling the service below. Schools can switch it off for themselves.
+        </p>
+      )}
+
+      {saved.value?.engineBlocked && (
+        <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
+          Translation is <strong>off</strong>: the saved service ({ENGINE_INFO[saved.value.engine].label}) has
+          no data processing agreement, and this server does not allow such services. Choose
+          LibreTranslate or DeepL and save, or switch it off. (Your server administrator can allow
+          it with <code>TRANSLATION_ALLOW_UNCONTRACTED_ENGINES=true</code> after assessing the
+          transfer.)
         </p>
       )}
 
@@ -198,11 +237,14 @@ export default function TranslationSettingsPage() {
                   }}
                   className="grid-cols-1 sm:grid-cols-2"
                 >
-                  {TRANSLATION_ENGINES.map((e) => (
+                  {engines.map((e) => (
                     <Label key={e} className={RADIO_CARD}>
                       <RadioGroupItem value={e} />
                       <span>
                         {ENGINE_INFO[e].label}
+                        {e === "libre" && (
+                          <span className="font-normal text-muted-foreground"> (recommended)</span>
+                        )}
                         <span className="block text-xs text-muted-foreground">
                           {ENGINE_INFO[e].description}
                         </span>
@@ -210,6 +252,21 @@ export default function TranslationSettingsPage() {
                     </Label>
                   ))}
                 </RadioGroup>
+                <p
+                  role="note"
+                  className={
+                    info.uncontracted
+                      ? "rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs"
+                      : "rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs"
+                  }
+                >
+                  <strong>Where text goes:</strong> {info.transfer}
+                </p>
+                {engineRefused && (
+                  <p role="alert" className="text-xs text-destructive">
+                    This server does not allow {info.label}. It can only be saved switched off.
+                  </p>
+                )}
               </fieldset>
 
               {libre && (

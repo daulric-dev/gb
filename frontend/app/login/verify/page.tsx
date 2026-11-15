@@ -26,6 +26,10 @@ import {
 import { userMessage } from "@/lib/errors";
 import { PARENT_HOME_PATH } from "@/lib/routing";
 import { isParentJoinPath } from "@/lib/parent";
+import {
+  routeToTwoStepSetup,
+  startTwoStepChallenge,
+} from "@/components/account/mfa/mfa-api";
 
 const RESEND_COOLDOWN = 60;
 const CODE_LENGTH = 8;
@@ -71,6 +75,8 @@ function VerifyOtpForm() {
       });
 
       await refresh();
+      // The organisation requires an authenticator app and there is none yet.
+      if (await routeToTwoStepSetup((p) => router.push(p), next)) return;
 
       const isStudent = data.user.account_type === "student";
 
@@ -95,6 +101,8 @@ function VerifyOtpForm() {
         router.push("/onboard");
       }
     } catch (err) {
+      // An authenticator code is due next (two-step verification).
+      if (startTwoStepChallenge(err, (p) => router.push(p), next)) return;
       const message = userMessage(err, "Verification failed");
       // Shown in place rather than only as a toast: the toast disappears, and
       // the next thing they do is retype the code right here.

@@ -93,6 +93,7 @@ export function MemberRolesDialog({
       await api(`/permissions/members/${member.id}/base-role`, {
         method: "PATCH",
         body: { role },
+        stepUp: true,
       });
       member.role = role;
       baseRole.value = role;
@@ -115,7 +116,9 @@ export function MemberRolesDialog({
         on
           ? `/permissions/members/${member.id}/roles`
           : `/permissions/members/${member.id}/roles/${roleId}`,
-        on ? { method: "POST", body: { roleId } } : { method: "DELETE" },
+        on
+          ? { method: "POST", body: { roleId }, stepUp: true }
+          : { method: "DELETE", stepUp: true },
       );
       const next = new Set(assigned.value);
       if (on) next.add(roleId);
@@ -134,7 +137,7 @@ export function MemberRolesDialog({
     <Dialog open={open} onOpenChange={onOpenChangeAction}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Roles - {memberName(member)}</DialogTitle>
+          <DialogTitle translate="no">Roles - {memberName(member)}</DialogTitle>
           <DialogDescription>
             Manage the built-in role and custom permissions for this member.
           </DialogDescription>

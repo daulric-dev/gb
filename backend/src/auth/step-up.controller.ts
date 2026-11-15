@@ -21,8 +21,13 @@ export class StepUpController {
 
   @Post('step-up/send')
   @HttpCode(200)
+  // Per signed-in session (the `route` throttler), not 'auth-strict': that
+  // one keys by the body's email + IP, and these bodies carry no email, so
+  // every user behind one address (a whole school's NAT) shared a single
+  // budget. The email-code service still caps sends per client (5 per
+  // 15 min) and per address (20 an hour); 'auth-ip' bounds one address.
   @Throttle({
-    'auth-strict': { limit: 5, ttl: 60 * 60 * 1000 },
+    route: { limit: 20, ttl: 60 * 60 * 1000 },
     'auth-ip': { limit: 300, ttl: 60 * 60 * 1000 },
   })
   async send(@Req() req: StepUpRequest) {
@@ -31,8 +36,9 @@ export class StepUpController {
 
   @Post('step-up/verify')
   @HttpCode(200)
+  // Per session too; each code also locks after its own attempt limit.
   @Throttle({
-    'auth-strict': { limit: 10, ttl: 15 * 60 * 1000 },
+    route: { limit: 10, ttl: 15 * 60 * 1000 },
     'auth-ip': { limit: 600, ttl: 15 * 60 * 1000 },
   })
   async verify(@Req() req: StepUpRequest, @Body() dto: VerifyStepUpDto) {

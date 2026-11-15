@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
-import { expectRejection } from '@/test/mocks';
+import { createMockCacheService, expectRejection } from '@/test/mocks';
+import { permCacheKey } from '@/permission/permission.effective';
+import { AttendanceAlertController } from './attendance-alerts.controller';
 import { AttendanceAlertService, DEFAULT_ALERT_SETTINGS, alertEmail } from './attendance-alert.service';
 
 const NOW = new Date('2026-11-09T12:00:00Z');
@@ -114,6 +116,7 @@ describe('AttendanceAlertService', () => {
   });
 
   test('emails the form tutor and admins once each; a tutor who left is skipped', async () => {
+    prisma.notification_preference_opt_out.findMany.mockResolvedValue([]);
     prisma.student.findMany.mockResolvedValue([
       { id: 's1', first_name: 'Ada', last_name: 'L', form_tutor_id: 'tutor-1' },
       { id: 's2', first_name: 'Bo', last_name: 'K', form_tutor_id: 'gone' },
@@ -140,6 +143,22 @@ describe('AttendanceAlertService', () => {
     expect(mail.send).not.toHaveBeenCalled();
   });
 
+  test('staff who turned attendance emails off get none', async () => {
+    prisma.student.findMany.mockResolvedValue([{ id: 's1', first_name: 'Ada', last_name: 'L', form_tutor_id: 'tutor-1' }]);
+    prisma.school_management.findMany.mockResolvedValue([
+      { user_id: 'tutor-1', role: 'teacher', user_profile: { email: 'tutor@x.test' } },
+      { user_id: 'admin-1', role: 'admin', user_profile: { email: 'admin@x.test' } },
+    ]);
+    prisma.school.findUnique.mockResolvedValue({ name: 'Hill' });
+    prisma.notification_preference_opt_out.findMany.mockResolvedValue([{ user_profile_id: 'admin-1' }]);
+    await service.notifyStaff('school-1', settings, [
+      { id: 'a1', school_id: 'school-1', student_id: 's1', kind: 'low_rate', value: 80, threshold: 90, window_days: 28 },
+    ]);
+    expect(mail.send.mock.calls.map((c: any) => c[0].to)).toEqual(['tutor@x.test']);
+    const where = prisma.notification_preference_opt_out.findMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({ channel: 'email', category: 'attendance' });
+  });
+
   test('form tutors must be school staff, and students in the school', async () => {
     expect(await expectRejection(service.setFormTutor('school-1', ['s1'], 'stranger'))).toBeInstanceOf(
       BadRequestException,
@@ -154,5 +173,30 @@ describe('AttendanceAlertService', () => {
 
   test('the email names the single student in its subject', () => {
     expect(alertEmail({ schoolName: 'Hill', lines: ['Ada L: x'], url: 'u' }).subject).toBe('Attendance alert: Ada L');
+  });
+});
+
+describe('GET /attendance-alerts/form-tutors', () => {
+  test('needs student:read-all on top of student:update (it lists the whole school)', async () => {
+    const prisma = createMockPrisma();
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
+    const cache = createMockCacheService();
+    const alerts = { formTutors: async () => ({ students: [], staff: [] }) };
+    const ctl = new AttendanceAlertController(alerts as any, prisma as any, cache as any);
+    const req = { user: { id: 'teacher-1' } };
+    await cache.set(permCacheKey('teacher-1', 'school-1'), { member: true, role: 'teacher', keys: ['student:update'] }, 60);
+    let err: unknown;
+    try {
+      await ctl.formTutors(req);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ForbiddenException);
+    await cache.set(
+      permCacheKey('teacher-1', 'school-1'),
+      { member: true, role: 'teacher', keys: ['student:update', 'student:read-all'] },
+      60,
+    );
+    expect(await ctl.formTutors(req)).toEqual({ students: [], staff: [] });
   });
 });

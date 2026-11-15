@@ -27,6 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OrgHeader } from "../_components/org-header";
+import { MfaPolicyCard } from "@/components/account/mfa/mfa-policy-card";
+import { PushContentSetting } from "@/components/notifications/push-content-setting";
 import { userMessage } from "@/lib/errors";
 
 export default function OrganisationSettingsPage() {
@@ -126,6 +128,12 @@ export default function OrganisationSettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      <MfaPolicyCard />
+
+      <div className="max-w-xl">
+        <PushContentSetting scope="organisation" />
+      </div>
 
       {org && (
         <div className="max-w-xl">

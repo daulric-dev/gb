@@ -28,6 +28,7 @@ import { userMessage } from "@/lib/errors";
 import { useFeatures } from "@/hooks/use-features";
 import { aiDraftApi, aiErrorMessage, type RubricSuggestions } from "@/lib/ai";
 import { AiDraftNote } from "@/components/ai/ai-draft-note";
+import type { RubricPrefill } from "./AiGradingDraftDialog";
 
 /** PUT /activities/:id/submissions/:studentId/rubric */
 export interface RubricMarkResult {
@@ -65,6 +66,7 @@ export function RubricMarkDialog({
   feedback,
   onOpenChangeAction,
   onSavedAction,
+  prefill = null,
 }: {
   open: boolean;
   activityId: string;
@@ -75,6 +77,8 @@ export function RubricMarkDialog({
   feedback: string | null;
   onOpenChangeAction: (open: boolean) => void;
   onSavedAction: (result: RubricMarkResult) => void;
+  /** From an AI grading draft: the criteria the teacher accepted and the edited feedback. Still saved only by Save mark. */
+  prefill?: RubricPrefill | null;
 }) {
   useSignals();
   const picks = useSignal<Record<string, CriterionPick>>({});
@@ -97,9 +101,10 @@ export function RubricMarkDialog({
         comment: a.comment ?? "",
       };
     }
+    for (const [criterionId, pick] of Object.entries(prefill?.picks ?? {})) next[criterionId] = pick;
     picks.value = next;
     override.value = "";
-    note.value = feedback ?? "";
+    note.value = prefill?.feedback || (feedback ?? "");
     // Reset only when the dialog opens for a student, not on every render
     // that hands in a fresh (but equal) `existing` array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -204,12 +209,19 @@ export function RubricMarkDialog({
     <Dialog open={open} onOpenChange={onOpenChangeAction}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Mark {student?.name}</DialogTitle>
+          <DialogTitle translate="no">Mark {student?.name}</DialogTitle>
           <DialogDescription>
             {rubric.title}. Pick a level for each criterion; the total becomes
             the mark unless you enter a score.
           </DialogDescription>
         </DialogHeader>
+
+        {prefill && (
+          <AiDraftNote>
+            Filled in from the AI draft you reviewed. Check each criterion; nothing is saved until you
+            press Save mark.
+          </AiDraftNote>
+        )}
 
         {aiOn && (
           <div className="space-y-2">
@@ -292,7 +304,7 @@ export function RubricMarkDialog({
                         <span className="font-medium">
                           AI suggests: {level ? `${level.label} (${level.points})` : "no level"}
                         </span>
-                        {s.comment && <span className="block text-muted-foreground">{s.comment}</span>}
+                        {s.comment && <span className="block text-muted-foreground" translate="no">{s.comment}</span>}
                       </p>
                       <Button
                         type="button"
@@ -327,7 +339,7 @@ export function RubricMarkDialog({
                 <div className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-2 text-xs dark:border-amber-800 dark:bg-amber-950/20">
                   <p className="min-w-0 flex-1 whitespace-pre-wrap">
                     <span className="font-medium">AI suggests: </span>
-                    {ai.value.feedback}
+                    <span translate="no">{ai.value.feedback}</span>
                   </p>
                   <Button
                     type="button"

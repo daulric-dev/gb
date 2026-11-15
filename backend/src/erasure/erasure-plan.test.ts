@@ -111,3 +111,30 @@ describe('compileStep', () => {
 test('userStoragePrefixes covers each school folder and the avatar', () => {
   expect(userStoragePrefixes(A, [B, B, 'not-a-uuid'])).toEqual([`file-manager/${B}/${A}/`, `images/avatars/${A}.`]);
 });
+
+describe('retention and erasure additions', () => {
+  const T = '33333333-3333-4333-8333-333333333333';
+  test('account deletion steps: AI request user blanked, push devices and roster links deleted', () => {
+    validatePlan(
+      plan.of(
+        plan.update('public.ai_request', { user_id: [A] }, { user_id: null }),
+        plan.del('public.push_device', { user_id: [A] }),
+        plan.del('public.roster_link', { target_id: [A, B] }),
+        plan.update('public.roster_link', { id: [A] }, { email: null, data: {} }),
+      ),
+    );
+    const { sql } = compileStep(plan.update('public.ai_request', { user_id: [A] }, { user_id: null }) as any, AT);
+    expect(sql).toBe(
+      'UPDATE "public"."ai_request" SET "user_id" = NULL WHERE "user_id" = ANY($1::uuid[]) AND ("user_id" IS NOT NULL)',
+    );
+    rejects(plan.of(plan.update('public.ai_request', { user_id: [A] }, { prompt_text: null })));
+    rejects(plan.of(plan.update('public.roster_link', { id: [A] }, { email: 'jane@example.com' })));
+  });
+
+  test("one student's term report PDF is an allowed storage key; anything wider is not", () => {
+    validatePlan(plan.of(plan.prefixes([`report-cards/schools/${A}/terms/${B}/${T}.pdf`])));
+    rejects(plan.of(plan.prefixes([`report-cards/schools/${A}/`])));
+    rejects(plan.of(plan.prefixes([`report-cards/schools/${A}/terms/${B}/`])));
+    rejects(plan.of(plan.prefixes([`report-cards/schools/${A}/terms/${B}/jane.pdf`])));
+  });
+});

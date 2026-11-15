@@ -14,8 +14,19 @@ export const MAX_TEXTS = 200;
 export const MAX_TEXT_CHARS = 5_000;
 export const MAX_TOTAL_CHARS = 50_000;
 
-/** Cached translations live this long (seconds: CacheService TTLs are in seconds). */
-export const TRANSLATION_CACHE_TTL = 30 * 24 * 60 * 60;
+/**
+ * Hours a cached translation lives: TRANSLATION_CACHE_TTL_HOURS (1 - 720),
+ * default 24. The cache holds the translated text (which may contain names,
+ * feedback or messages) keyed by a hash of the original, so this is the
+ * retention period of translated text; nothing else stores it.
+ */
+export function translationCacheTtlHours(): number {
+  const v = Number(process.env.TRANSLATION_CACHE_TTL_HOURS);
+  return Number.isInteger(v) && v >= 1 && v <= 720 ? v : 24;
+}
+
+/** Cached translations live this long (seconds: CacheService TTLs are in seconds). Read at startup. */
+export const TRANSLATION_CACHE_TTL = translationCacheTtlHours() * 60 * 60;
 export const TRANSLATION_CACHE_PREFIX = 'translation:';
 
 /** Per engine call (ms). TRANSLATION_TIMEOUT_MS overrides (1 s - 120 s). */

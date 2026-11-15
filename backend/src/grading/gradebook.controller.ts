@@ -13,6 +13,8 @@ import {
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { GradebookService } from './gradebook.service';
 import { GradebookImportService } from './gradebook-import.service';
 import { ImportGradebookDto } from './dto/gradebook-import.dto';
@@ -26,6 +28,7 @@ export class GradebookController {
   constructor(
     private readonly gradebook: GradebookService,
     private readonly importer: GradebookImportService,
+    private readonly audit: AuditLogService,
   ) {}
 
   @Get()
@@ -33,11 +36,16 @@ export class GradebookController {
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    return this.gradebook.gradebook(req.user.id as string, courseId);
+    const userId = req.user.id as string;
+    const result = await this.gradebook.gradebook(userId, courseId);
+    await this.audit.recordRead(userId, { entity: 'gradebook', courseId });
+    return result;
   }
 
+  /** Bulk export of personal data: step-up, and audited with its row count. */
   @Get('export')
   @ApiProduces('text/csv')
+  @RequireStepUp()
   async export(
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
@@ -47,6 +55,12 @@ export class GradebookController {
       req.user.id as string,
       courseId,
     );
+    await this.audit.recordExport(req.user.id as string, {
+      courseId,
+      entity: 'gradebook',
+      scope: 'course',
+      csv,
+    });
 
     return res
       .header('Content-Type', 'text/csv; charset=utf-8')

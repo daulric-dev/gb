@@ -32,9 +32,10 @@ export const userPermCachePrefix = (userId: string) =>
 /**
  * Compute a user's effective permissions in a school:
  * `ROLE_DEFAULTS[enum role] ∪ permissions of any assigned custom role`, with
- * admins granted the full catalog. Organisation admins (public.organisation_admin
- * or ORG_ADMIN_EMAILS) are administrators of every school: they get the full
- * catalog with or without a membership row. This is the one place that rule
+ * admins granted the catalog except EXPLICIT_ONLY_KEYS (safeguarding), which
+ * only an assigned role can add. Organisation admins (public.organisation_admin
+ * or ORG_ADMIN_EMAILS) are administrators of every school: they get the same
+ * admin defaults with or without a membership row. This is the one place that rule
  * lives. Shared by PermissionGuard (capability gate)
  * and the `/permissions/me` endpoint, so both agree on what a user can do.
  */
@@ -62,21 +63,35 @@ export async function computeEffectivePermissions(
     },
   });
 
-  // Admin: full catalog, scoped to this school.
+  // Grants from custom roles assigned to this membership. Added for every
+  // base role, admins included: keys outside the admin defaults (such as
+  // pastoral-note:safeguarding) are only ever held this way.
+  const granted = (keys: Set<PermissionKey>) => {
+    for (const assigned of membership?.school_management_role ?? []) {
+      for (const grant of assigned.school_role.school_role_permission) {
+        keys.add(grant.permission_catalog.key as PermissionKey);
+      }
+    }
+    return [...keys];
+  };
+
+  // Admin: the catalog except EXPLICIT_ONLY_KEYS, scoped to this school.
   if (membership?.role === 'admin') {
     return {
       member: true,
       role: 'admin',
-      keys: [...defaultsForRole('admin')],
+      keys: granted(defaultsForRole('admin')),
     };
   }
 
-  // An organisation admin administers every school in the install.
+  // An organisation admin administers every school in the install, with the
+  // same defaults as a school admin: never safeguarding through the
+  // organisation. A membership in this school can add it through a role.
   if (await isOrgAdmin(prisma, userId).catch(() => false)) {
     return {
       member: true,
       role: 'admin',
-      keys: [...defaultsForRole('admin')],
+      keys: granted(defaultsForRole('admin')),
       viaOrganisation: true,
     };
   }
@@ -85,16 +100,11 @@ export async function computeEffectivePermissions(
     return { member: false, role: null, keys: [] };
   }
 
-  const keys = defaultsForRole(membership.role as string);
-
-  // Union any custom roles assigned to this membership.
-  for (const assigned of membership.school_management_role) {
-    for (const grant of assigned.school_role.school_role_permission) {
-      keys.add(grant.permission_catalog.key as PermissionKey);
-    }
-  }
-
-  return { member: true, role: membership.role, keys: [...keys] };
+  return {
+    member: true,
+    role: membership.role,
+    keys: granted(defaultsForRole(membership.role as string)),
+  };
 }
 
 export async function loadEffectivePermissions(

@@ -110,7 +110,7 @@ export function GroupBreakdown({
                 </span>
               )}
             </span>
-            <span className="shrink-0 tabular-nums">
+            <span className="shrink-0 tabular-nums" translate="no">
               {g.percent === null ? (
                 <span className="text-muted-foreground">-</span>
               ) : (

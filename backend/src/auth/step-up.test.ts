@@ -4,7 +4,7 @@ import { BadRequestException, ForbiddenException, NotFoundException, RequestMeth
 import { EmailDomainController } from '@/email-domain/email-domain.controller';
 import { SchoolController } from '@/school/school.controller';
 import { SignInController } from '@/organisation/sign-in.controller';
-import { STEP_UP_KEY, STEP_UP_REQUIRED, StepUpGuard } from './step-up.guard';
+import { STEP_UP_KEY, STEP_UP_REQUIRED, StepUpGuard, assertSteppedUp } from './step-up.guard';
 import { StepUpService } from './step-up.service';
 import { StepUpController } from './step-up.controller';
 
@@ -35,7 +35,7 @@ describe('StepUpGuard', () => {
       expect((err as ForbiddenException).getResponse()).toEqual({
         statusCode: 403,
         code: STEP_UP_REQUIRED,
-        message: "Confirm it's you to change single sign-on or integration settings.",
+        message: "Confirm it's you to make this change.",
       });
     }
   });
@@ -148,5 +148,21 @@ describe('StepUpService', () => {
     const c = new StepUpController(service);
     await c.send({ user, ip: '9.9.9.9' });
     expect((codes.send.mock.calls[0] as any[])[0]).toBe('jo@school.edu');
+  });
+});
+
+describe('assertSteppedUp (routes where only some requests need step-up)', () => {
+  test('passes inside the window, 403 STEP_UP_REQUIRED otherwise', () => {
+    const CODE = STEP_UP_REQUIRED;
+    expect(() => assertSteppedUp({ sessionId: 's', elevatedUntil: Date.now() + 60_000 })).not.toThrow();
+    for (const user of [undefined, { sessionId: 's', elevatedUntil: null }, { sessionId: 's', elevatedUntil: Date.now() - 1 }]) {
+      let code: unknown;
+      try {
+        assertSteppedUp(user);
+      } catch (e) {
+        code = ((e as { getResponse(): { code: string } }).getResponse()).code;
+      }
+      expect(code).toBe(CODE);
+    }
   });
 });

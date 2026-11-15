@@ -155,6 +155,7 @@ export default function PortalCourseAttendancePage() {
             <CardDescription>Attendance rate</CardDescription>
             <CardTitle
               className={cn("text-3xl font-bold", rateColor(summary.rate))}
+              translate="no"
             >
               {formatRate(summary.rate)}
             </CardTitle>

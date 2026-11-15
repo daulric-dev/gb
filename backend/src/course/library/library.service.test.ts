@@ -131,7 +131,7 @@ function itemRow(over: Record<string, any> = {}) {
     description: null,
     subject: 'Biology',
     grade_level: '9',
-    tags: ['cells'],
+    tags: [{ tag: 'cells' }],
     visibility: 'school',
     latest_version: 1,
     created_by: AUTHOR,
@@ -157,7 +157,13 @@ describe('publishing', () => {
     await library.publish(AUTHOR, { sourceCourseId: SOURCE, title: ' Cells unit ', tags: ['Cells', 'cells'] });
 
     const item = prisma.library_item.create.mock.calls[0][0].data;
-    expect(item).toMatchObject({ school_id: SCHOOL_A, title: 'Cells unit', tags: ['cells'], visibility: 'school', latest_version: 1 });
+    expect(item).toMatchObject({
+      school_id: SCHOOL_A,
+      title: 'Cells unit',
+      tags: { create: [{ tag: 'cells' }] },
+      visibility: 'school',
+      latest_version: 1,
+    });
     const version = prisma.library_item_version.create.mock.calls[0][0].data;
     expect(version.version).toBe(1);
     const [file] = version.content.files;
@@ -334,7 +340,8 @@ describe('importing', () => {
     };
     prisma.library_import.create.mockResolvedValue(row);
     prisma.library_import.findUnique.mockResolvedValue(row);
-    prisma.$queryRaw.mockResolvedValue([{ status: 'copying' }]);
+    // The in-transaction claim finds the row still copying.
+    prisma.library_import.updateMany.mockResolvedValue({ count: 1 });
     prisma.course.create.mockResolvedValue({ id: 'new-course' });
     return prisma;
   }
@@ -430,7 +437,8 @@ describe('importing', () => {
     expect(done.file.createMany).not.toHaveBeenCalled();
 
     const racing = importDb();
-    racing.$queryRaw.mockResolvedValue([{ status: 'done' }]);
+    // Another run finished it first: the compare-and-set claim matches nothing.
+    racing.library_import.updateMany.mockResolvedValue({ count: 0 });
     expect(await services(racing).imports.run('imp-1', { final: true })).toBe('skipped');
     expect(racing.module.createMany).not.toHaveBeenCalled();
   });
@@ -452,7 +460,10 @@ describe('importing', () => {
       where.status === 'pending' ? [{ id: where.id.in[0], bucket: 'file-manager', storage_path: 'x' }] : [],
     );
     expect(await services(prisma, storage).imports.run('imp-1', { final: true })).toBe('failed');
-    expect(prisma.library_import.updateMany.mock.calls[0][0].data.status).toBe('failed');
+    // calls[0] is the in-transaction claim (rolled back); then the failure.
+    const failed = prisma.library_import.updateMany.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.data.status);
+    expect(failed.data.status).toBe('failed');
+    expect(failed.where).toEqual({ id: 'imp-1', status: { not: 'done' } });
     expect(storage.delete).toHaveBeenCalled();
   });
 

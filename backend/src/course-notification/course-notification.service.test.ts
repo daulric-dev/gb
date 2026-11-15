@@ -317,3 +317,30 @@ describe('CourseNotificationService school announcements', () => {
     expect(pushes).toHaveLength(0);
   });
 });
+
+describe('notification categories', () => {
+  test('each push names its preference category; discussion replies are sensitive', async () => {
+    const { service, pushes, prisma } = setup();
+    await service.activityPublished('course-1', { id: 'act-1', title: 'Lab', kind: 'assignment' });
+    expect(pushes.at(-1)!.message.category).toBe('coursework');
+
+    prisma.course_notification.findMany.mockResolvedValue([]);
+    await service.announcementPosted('course-1', { id: 'ann-1', title: 'Trip', body: null });
+    expect(pushes.at(-1)!.message.category).toBe('announcements');
+
+    await service.peerReviewAssigned('course-1', { id: 'act-2', title: 'Essay' }, ['s-1']);
+    expect(pushes.at(-1)!.message.category).toBe('coursework');
+
+    await service.schoolAnnouncementPosted('school-1', { id: 'ann-2', title: 'Closed', body: null });
+    expect(pushes.at(-1)!.message).toMatchObject({ category: 'announcements', schoolId: 'school-1' });
+
+    prisma.discussion_reply.findMany.mockResolvedValue([{ author_user_profile_id: 'u-1' }]);
+    prisma.course_staff.findMany.mockResolvedValue([]);
+    await service.discussionReplied(
+      'course-1',
+      { id: 'topic-1', title: 'Cells', authorUserProfileId: 'u-2' },
+      { authorUserProfileId: 'u-9', body: 'I agree' },
+    );
+    expect(pushes.at(-1)!.message).toMatchObject({ category: 'discussions', sensitive: true });
+  });
+});

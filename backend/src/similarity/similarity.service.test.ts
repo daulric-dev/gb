@@ -63,12 +63,10 @@ describe('the check job', () => {
     const { service, prisma } = build((p) => {
       p.submission.findUnique.mockResolvedValue(SUBMISSION);
       p.similarity_fingerprint.upsert.mockResolvedValue({ id: 'fp-1' });
+      p.similarity_fingerprint.findMany.mockResolvedValue([
+        { id: 'fp-2', hashes: fingerprint(ESSAY, ['Write an essay'])!.hashes.map((hash) => ({ hash })) },
+      ]);
     });
-    // The candidate query returns a copy of the same text.
-    const copy = fingerprint(ESSAY, ['Write an essay'])!;
-    prisma.$queryRaw.mockImplementation(async (strings: TemplateStringsArray) =>
-      strings.join('').includes('similarity_fingerprint f') ? [{ id: 'fp-2', hashes: copy.hashes }] : [],
-    );
     const out = await service.process('sub-1');
     expect(out).toEqual({ parts: 1, computed: 1 });
     const data = prisma.similarity_match.createMany.mock.calls[0][0].data;
@@ -77,13 +75,10 @@ describe('the check job', () => {
       expect.objectContaining({ fingerprint_id: 'fp-2', other_id: 'fp-1', score: 100 }),
     ]);
     // Candidates are limited to the school, never the same student.
-    const sql = prisma.$queryRaw.mock.calls
-      .map((c: any[]) => ({ text: (c[0] as string[]).join('?'), values: c.slice(1) }))
-      .find((c: any) => c.text.includes('similarity_fingerprint f'))!;
-    expect(sql.text).toContain('f.school_id =');
-    expect(sql.text).toContain('s.student_id <>');
-    expect(sql.values).toContain('school-1');
-    expect(sql.values).toContain('stu-1');
+    const where = prisma.similarity_fingerprint.findMany.mock.calls[0][0].where;
+    expect(where.school_id).toBe('school-1');
+    expect(where.submission.student_id).toEqual({ not: 'stu-1' });
+    expect(where.hashes.some.hash.in.length).toBeGreaterThan(0);
   });
 
   test('is idempotent: an unchanged text is not recomputed', async () => {
@@ -101,6 +96,23 @@ describe('the check job', () => {
       p.submission.findUnique.mockResolvedValue({ ...SUBMISSION, text_body: 'Too short to matter.' });
     });
     expect(await service.process('sub-1')).toEqual({ parts: 0, computed: 0 });
+    expect(prisma.similarity_fingerprint.deleteMany.mock.calls[0][0].where).toEqual({
+      submission_id: 'sub-1',
+      part: { notIn: [] },
+    });
+  });
+
+  test('a student restricted from the check (no_similarity) is not fingerprinted, and loses old fingerprints', async () => {
+    const { service, prisma } = build((p) => {
+      p.submission.findUnique.mockResolvedValue(SUBMISSION);
+      p.student_restriction.findMany.mockResolvedValue([{ student_id: 'stu-1' }]);
+    });
+    expect(await service.process('sub-1')).toEqual({ parts: 0, computed: 0 });
+    expect(prisma.student_restriction.findMany.mock.calls[0][0].where).toMatchObject({
+      student_id: { in: ['stu-1'] },
+      no_similarity: true,
+    });
+    expect(prisma.similarity_fingerprint.upsert).not.toHaveBeenCalled();
     expect(prisma.similarity_fingerprint.deleteMany.mock.calls[0][0].where).toEqual({
       submission_id: 'sub-1',
       part: { notIn: [] },

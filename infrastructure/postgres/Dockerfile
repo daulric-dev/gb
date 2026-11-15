@@ -21,7 +21,7 @@
 #   walg               wal-g with the checked settings (walg backup-list --detail)
 #   wal-g              the WAL-G CLI itself
 
-FROM golang:1.27.2-alpine3.24 AS walg
+FROM golang:1.27.4-alpine3.24 AS walg
 ARG WALG_VERSION=v3.0.9
 ARG WALG_SOURCE_SHA256=b06bc26c4865c07d0c269101910f63c7eedd03790b7c054a7da0980a7a9cc31d
 RUN apk add --no-cache build-base curl libsodium-dev libsodium-static

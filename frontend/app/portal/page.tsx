@@ -21,6 +21,7 @@ import { CourseCard, CourseCardSkeleton, CourseGrid } from "./_components/course
 import { JoinCourseDialog } from "./_components/join-course-dialog";
 import { EmptyState, WorkRow } from "./_components/portal-ui";
 import { SchoolAnnouncementItem } from "./_components/school-announcements";
+import { NoTranslate } from "@/components/translation/no-translate";
 import type { PortalAnnouncement } from "./_components/types";
 import {
   byDueDate,
@@ -76,7 +77,7 @@ export default function PortalDashboardPage() {
         <div>
           <h1 className="text-3xl font-bold">
             {greeting()}
-            {firstName ? `, ${firstName}` : ""}
+            {firstName ? <NoTranslate>{`, ${firstName}`}</NoTranslate> : ""}
           </h1>
           <p className="mt-1 text-muted-foreground">
             {loading.value

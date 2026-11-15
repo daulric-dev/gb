@@ -177,7 +177,7 @@ export function SubmissionFileViewerDialog({
     >
       <DialogContent className="flex h-[min(92vh,60rem)] w-[calc(100vw-2rem)] flex-col gap-4 sm:max-w-7xl">
         <DialogHeader className="shrink-0">
-          <DialogTitle className="truncate pr-8">{file.name}</DialogTitle>
+          <DialogTitle className="truncate pr-8" translate="no">{file.name}</DialogTitle>
         </DialogHeader>
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md border bg-muted/30">
           {loading.value ? (
@@ -195,6 +195,7 @@ export function SubmissionFileViewerDialog({
               <iframe
                 src={url.value}
                 title={file.name}
+                data-private-label
                 className="h-full w-full"
               />
             ) : (
@@ -202,6 +203,7 @@ export function SubmissionFileViewerDialog({
               <img
                 src={url.value}
                 alt={file.name}
+                data-private-label
                 className="h-full w-full object-contain"
               />
             )

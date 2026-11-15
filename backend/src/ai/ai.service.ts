@@ -90,8 +90,9 @@ export function dataNotice(provider: { name: string; kind: string; base_url: str
       : `an OpenAI-compatible service at ${providerHost(provider.kind, provider.base_url) || 'the configured address'}`;
   return (
     `AI requests are sent to "${provider.name}", ${where}, set up by your organisation. ` +
-    'Only the text needed for the request is sent. Student names and email addresses are replaced with placeholders first. ' +
-    "Students' work is sent only for rubric feedback suggestions, and only if your school allows it. " +
+    "Only the text needed for the request is sent. The names of the course's students, staff and parents, email addresses and phone numbers are replaced with placeholders first. " +
+    "Students' work is sent only for marking suggestions, only if your school allows it, and never for a student whose record restricts AI. " +
+    "The text of files students uploaded (PDF, Word, text and code files; never images) is sent only if your school also allows sending uploaded files. " +
     'Everything the AI returns is a draft for a teacher to review; it never marks work or changes anything on its own.'
   );
 }
@@ -283,6 +284,19 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** The user's AI requests in the last rolling hour, and the organisation's hourly limit. */
+  async hourlyUsage(userId: string): Promise<{ used: number; limit: number }> {
+    const settings = await this.providers.orgSettings();
+    const used = await this.prisma.ai_request.count({
+      where: {
+        user_id: userId,
+        created_at: { gte: new Date(Date.now() - 60 * 60 * 1000) },
+        status: { notIn: ['rate_limited', 'cap_reached'] },
+      },
+    });
+    return { used, limit: settings.userHourlyLimit };
+  }
+
   /**
    * Test a saved provider with a tiny structured request. Only saved
    * providers can be tested: the base URL was validated and stored (behind
@@ -310,11 +324,24 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
   // ── school settings ───────────────────────────────────────────────────
 
   async allowStudentWork(schoolId: string): Promise<boolean> {
+    return (await this.studentWorkSettings(schoolId)).allowStudentWork;
+  }
+
+  /**
+   * The school's two switches for students' work: `allowStudentWork` (any
+   * student work may be sent) and `allowStudentFiles` (the text read from
+   * uploaded files may be sent, for AI grading drafts). Both off by default;
+   * files need both.
+   */
+  async studentWorkSettings(schoolId: string): Promise<{ allowStudentWork: boolean; allowStudentFiles: boolean }> {
     const row = await this.prisma.ai_school_setting.findUnique({
       where: { school_id: schoolId },
-      select: { allow_student_work: true },
+      select: { allow_student_work: true, allow_student_files: true },
     });
-    return row?.allow_student_work ?? false;
+    return {
+      allowStudentWork: row?.allow_student_work ?? false,
+      allowStudentFiles: row?.allow_student_files ?? false,
+    };
   }
 
   private static summary(p: ProviderRow) {
@@ -325,9 +352,11 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
   async statusFor(schoolId: string) {
     await this.features.assertEnabled(schoolId, 'ai_assistance');
     const provider = await this.providerFor(schoolId);
+    const work = await this.studentWorkSettings(schoolId);
     return {
       provider: provider ? AiService.summary(provider) : null,
-      allowStudentWork: await this.allowStudentWork(schoolId),
+      allowStudentWork: work.allowStudentWork,
+      allowStudentFiles: work.allowStudentFiles,
       notice: dataNotice(provider),
     };
   }
@@ -371,16 +400,17 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
    */
   async updateSchoolSettings(
     userId: string,
-    input: { allowStudentWork?: boolean; providerId?: string | null },
+    input: { allowStudentWork?: boolean; allowStudentFiles?: boolean; providerId?: string | null },
   ) {
     const schoolId = await this.activeSchool(userId);
     await this.features.assertEnabled(schoolId, 'ai_assistance');
     const current = await this.prisma.ai_school_setting.findUnique({
       where: { school_id: schoolId },
-      select: { allow_student_work: true, provider_id: true },
+      select: { allow_student_work: true, allow_student_files: true, provider_id: true },
     });
     const before = {
       allow_student_work: current?.allow_student_work ?? false,
+      allow_student_files: current?.allow_student_files ?? false,
       provider_id: current?.provider_id ?? null,
     };
     let chosen: { id: string; name: string } | null = null;
@@ -398,6 +428,7 @@ export class AiService implements OnModuleInit, OnModuleDestroy {
     }
     const next = {
       allow_student_work: input.allowStudentWork ?? before.allow_student_work,
+      allow_student_files: input.allowStudentFiles ?? before.allow_student_files,
       provider_id: input.providerId === undefined ? before.provider_id : (chosen?.id ?? null),
     };
     const beforeName =

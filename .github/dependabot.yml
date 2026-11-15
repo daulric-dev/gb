@@ -10,6 +10,12 @@ updates:
     schedule:
       interval: "weekly"
     target-branch: "staging"
+    groups:
+      # CodeQL needs init, autobuild and analyze on the same version, so
+      # they are bumped together in one pull request.
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
 
   - package-ecosystem: "docker"
     directories:

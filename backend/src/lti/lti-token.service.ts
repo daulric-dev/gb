@@ -177,6 +177,10 @@ export class LtiTokenService {
     });
     if (!row || row.expires_at.getTime() <= Date.now()) return null;
     if (!row.tool.enabled || !row.tool.ags_enabled) return null;
-    return { toolId: row.tool_id, scopes: row.scopes };
+    return { toolId: row.tool_id, scopes: stringList(row.scopes) };
   }
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

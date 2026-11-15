@@ -9,6 +9,11 @@ import {
   encryptWebhookSecret,
 } from '@/integrations/webhooks/webhook-secret';
 import { decryptSsoSecret } from '@/sso/sso-secret';
+import { MFA_SECRET_INFO } from '@/mfa/mfa.service';
+import { AI_KEY_INFO, aiKeyAad } from '@/ai/ai.constants';
+import { TRANSLATION_KEY_AAD, TRANSLATION_KEY_INFO } from '@/translation/translation.constants';
+import { ROSTER_SECRET_INFO, rosterSecretAad } from '@/rostering/rostering.constants';
+import { LTI_PLATFORM_KEY_INFO } from '@/lti/platform-key.service';
 import { signEntry, stableStringify, verifyEntry, type ErasureEntry } from '@/erasure/erasure-log.service';
 
 const AUTH_A = 'a'.repeat(40);
@@ -115,12 +120,31 @@ describe('new-format (v2, DATA_ENCRYPTION_KEY) values', () => {
 });
 
 /** Minimal Prisma stand-in for the three secret tables (updateMany with the compare-and-set where). */
+/** A table whose updateMany is a compare-and-set on every `where` field. */
+function table(rows: Record<string, any>[]) {
+  return {
+    rows,
+    findMany: async () => rows.map((r) => ({ ...r })),
+    updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+      const row = rows.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+      if (row) Object.assign(row, data);
+      return { count: row ? 1 : 0 };
+    },
+  };
+}
+
 function fakeDb() {
   const webhooks = [{ id: WEBHOOK, school_id: SCHOOL, secret_enc: legacyWebhook() }];
   const headers = [{ id: HEADER, webhook_id: WEBHOOK, value_enc: legacyHeader(), webhook: { school_id: SCHOOL } }];
   const sso = [{ school_id: SCHOOL, provider: 'google', client_secret_enc: legacySso() as string | null }];
   return {
     rows: { webhooks, headers, sso },
+    // Tables the newer rotation steps read; empty unless a test fills them.
+    mfa_totp: table([]),
+    ai_provider: table([]),
+    translation_setting: table([]),
+    roster_source: table([]),
+    lti_platform_key: table([]),
     school_webhook: {
       findMany: async () => webhooks.map((w) => ({ ...w })),
       updateMany: async ({ where, data }: { where: { id: string; secret_enc: string }; data: { secret_enc: string } }) => {
@@ -244,6 +268,44 @@ describe('rotation: DATA_ENCRYPTION_KEY, re-encrypt, then a new AUTH_SECRET', ()
     expect(decryptWebhookHeaderValue(HOWNER, db.rows.headers[0].value_enc)).toBe('Bearer old');
     expect(decryptSsoSecret(SOWNER, db.rows.sso[0].client_secret_enc!)).toBe('sso-old');
     expect(verifyEntry(JSON.parse(objects.get(key)!))).toBe(true);
+  });
+
+  test('authenticator, AI, translation, rostering and LTI secrets move to DATA_ENCRYPTION_KEY with their own purpose and AAD', async () => {
+    const USER = '55555555-5555-4555-8555-555555555555';
+    const AI = '66666666-6666-4666-8666-666666666666';
+    const SRC = '77777777-7777-4777-8777-777777777777';
+    const KID = 'kid-1';
+    const db = fakeDb();
+    // Sealed under AUTH_SECRET (v1), as before DATA_ENCRYPTION_KEY was set.
+    db.mfa_totp.rows.push({
+      user_id: USER,
+      secret_enc: sealSecret(MFA_SECRET_INFO, Buffer.from(USER), 'TOTPSECRET'),
+      pending_secret_enc: sealSecret(MFA_SECRET_INFO, Buffer.from(USER), 'PENDING'),
+    });
+    db.ai_provider.rows.push({ id: AI, api_key_enc: sealSecret(AI_KEY_INFO, aiKeyAad(AI), 'sk-ai') });
+    db.translation_setting.rows.push({ id: true, key_enc: sealSecret(TRANSLATION_KEY_INFO, TRANSLATION_KEY_AAD, 'tr-key') });
+    db.roster_source.rows.push({ id: SRC, client_secret_enc: sealSecret(ROSTER_SECRET_INFO, rosterSecretAad(SRC), 'roster') });
+    db.lti_platform_key.rows.push({ kid: KID, private_key_sealed: sealSecret(LTI_PLATFORM_KEY_INFO, Buffer.from(KID), 'PEM') });
+
+    process.env.DATA_ENCRYPTION_KEY = DEK;
+    const report = await reencryptStoredSecrets(db as never);
+    expect(report.mfaSecrets).toMatchObject({ scanned: 2, rewritten: 2, failed: 0 });
+    for (const k of ['aiProviderKeys', 'translationKeys', 'rosterSecrets', 'ltiPlatformKeys'] as const) {
+      expect(report[k]).toMatchObject({ scanned: 1, rewritten: 1, failed: 0 });
+    }
+    // Readable after AUTH_SECRET changes, with the same purpose and AAD.
+    process.env.AUTH_SECRET = AUTH_B;
+    const t = db.mfa_totp.rows[0];
+    expect(isSealedWithCurrentDataKey(t.secret_enc)).toBe(true);
+    expect(openSecret(MFA_SECRET_INFO, Buffer.from(USER), t.secret_enc)).toBe('TOTPSECRET');
+    expect(openSecret(MFA_SECRET_INFO, Buffer.from(USER), t.pending_secret_enc)).toBe('PENDING');
+    expect(openSecret(AI_KEY_INFO, aiKeyAad(AI), db.ai_provider.rows[0].api_key_enc)).toBe('sk-ai');
+    expect(openSecret(TRANSLATION_KEY_INFO, TRANSLATION_KEY_AAD, db.translation_setting.rows[0].key_enc)).toBe('tr-key');
+    expect(openSecret(ROSTER_SECRET_INFO, rosterSecretAad(SRC), db.roster_source.rows[0].client_secret_enc)).toBe('roster');
+    expect(openSecret(LTI_PLATFORM_KEY_INFO, Buffer.from(KID), db.lti_platform_key.rows[0].private_key_sealed)).toBe('PEM');
+    // Idempotent.
+    const again = await reencryptStoredSecrets(db as never);
+    expect(again.mfaSecrets).toMatchObject({ rewritten: 0, current: 2 });
   });
 
   test('without the re-encrypt, rotating AUTH_SECRET loses v1 values (why the script exists)', () => {

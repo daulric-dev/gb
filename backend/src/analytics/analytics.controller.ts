@@ -15,6 +15,8 @@ import {
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { FeatureGuard } from '@/features/feature.guard';
 import { RequireFeature } from '@/features/require-feature.decorator';
 import { PermissionGuard } from '@/permission/permission.guard';
@@ -52,25 +54,47 @@ export class AnalyticsController {
   constructor(
     private readonly analytics: AnalyticsService,
     private readonly scheduler: AnalyticsScheduler,
+    private readonly audit: AuditLogService,
   ) {}
 
   @Get('school')
   @RequirePermission('analytics', 'read')
   async school(@Req() req: any, @Query() q: SchoolFilterDto) {
-    return this.analytics.school(req.user.id as string, filterOf(q));
+    const userId = req.user.id as string;
+    const result = await this.analytics.school(userId, filterOf(q));
+    await this.audit.recordRead(userId, {
+      entity: 'school_analytics',
+      details: { hasTermFilter: !!q.termId, hasAcademicYearFilter: !!q.academicYearId },
+    });
+    return result;
   }
 
   @Get('school/at-risk')
   @RequirePermission('analytics', 'read')
   async atRisk(@Req() req: any, @Query() q: SchoolFilterDto) {
-    return this.analytics.schoolAtRisk(req.user.id as string, filterOf(q));
+    const userId = req.user.id as string;
+    const result = await this.analytics.schoolAtRisk(userId, filterOf(q));
+    await this.audit.recordRead(userId, {
+      entity: 'school_at_risk',
+      details: { hasTermFilter: !!q.termId, hasAcademicYearFilter: !!q.academicYearId },
+    });
+    return result;
   }
 
   @Get('school/export')
   @RequirePermission('analytics', 'read')
   @ApiProduces('text/csv')
+  @RequireStepUp()
   async export(@Req() req: any, @Query() q: SchoolExportDto, @Res() reply: FastifyReply) {
-    sendCsv(reply, await this.analytics.schoolCsv(req.user.id as string, q.table ?? 'courses', filterOf(q)));
+    const table = q.table ?? 'courses';
+    const out = await this.analytics.schoolCsv(req.user.id as string, table, filterOf(q));
+    await this.audit.recordExport(req.user.id as string, {
+      entity: 'analytics',
+      scope: 'school',
+      csv: out.csv,
+      details: { table, ...filterOf(q) },
+    });
+    sendCsv(reply, out);
   }
 
   @Post('school/refresh')
@@ -100,21 +124,37 @@ export class AnalyticsController {
 @UseGuards(AuthGuard, FeatureGuard)
 @RequireFeature('analytics')
 export class CourseAnalyticsController {
-  constructor(private readonly analytics: AnalyticsService) {}
+  constructor(
+    private readonly analytics: AnalyticsService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   @Get()
   async get(@Req() req: any, @Param('courseId', ParseUUIDPipe) courseId: string) {
-    return this.analytics.course(req.user.id as string, courseId);
+    const userId = req.user.id as string;
+    const result = await this.analytics.course(userId, courseId);
+    await this.audit.recordRead(userId, { entity: 'course_analytics', courseId });
+    return result;
   }
 
   @Get('export')
   @ApiProduces('text/csv')
+  @RequireStepUp()
   async export(
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Query() q: CourseExportDto,
     @Res() reply: FastifyReply,
   ) {
-    sendCsv(reply, await this.analytics.courseCsv(req.user.id as string, courseId, q.table ?? 'activities'));
+    const table = q.table ?? 'activities';
+    const out = await this.analytics.courseCsv(req.user.id as string, courseId, table);
+    await this.audit.recordExport(req.user.id as string, {
+      courseId,
+      entity: 'analytics',
+      scope: 'course',
+      csv: out.csv,
+      details: { table },
+    });
+    sendCsv(reply, out);
   }
 }

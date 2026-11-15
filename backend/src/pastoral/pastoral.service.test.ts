@@ -12,6 +12,7 @@ import { AuditLogService } from '@/audit-log/audit-log.service';
 import { RetentionService } from '@/retention/retention.service';
 import { PastoralService } from './pastoral.service';
 import { canChangeNote, canSeeNote, visibleNotes, type PastoralCaller } from './pastoral-access';
+import { isSealedText, openText, sealText } from '@/account/sensitive-text';
 
 const SCHOOL = 'aaaaaaaa-1111-4111-8111-111111111111';
 const OTHER_SCHOOL = 'bbbbbbbb-2222-4222-8222-222222222222';
@@ -32,6 +33,7 @@ const USERS: Record<string, { role: string; keys: string[]; school?: string } | 
   teacher: { role: 'teacher', keys: [] },
   author: { role: 'teacher', keys: [] },
   member: { role: 'member', keys: [] },
+  sgadmin: { role: 'admin', keys: ['pastoral-note:safeguarding'] },
   outsider: { role: 'admin', keys: [], school: OTHER_SCHOOL },
   student: null,
 };
@@ -65,7 +67,11 @@ function note(over: Record<string, any> = {}) {
 const sgNote = (over: Record<string, any> = {}) =>
   note({ id: SG_NOTE, category_id: SG_CAT, is_safeguarding: true, author_id: 'dsl', category: { label: 'Safeguarding', kind: 'safeguarding' }, ...over });
 
+/** Whether STUDENT is in a scoped (course / tutor group) caller's scope. */
+const scope = { inScope: true };
+
 function db(): MockPrisma {
+  scope.inScope = true;
   const prisma = createMockPrisma();
   prisma.user_profile.findUnique.mockImplementation(async ({ where }: any) => {
     const u = USERS[where.id];
@@ -81,9 +87,11 @@ function db(): MockPrisma {
       ],
     };
   });
-  prisma.student.findFirst.mockImplementation(async ({ where }: any) =>
-    where.id === STUDENT && where.school_id === SCHOOL ? { id: STUDENT } : null,
-  );
+  prisma.student.findFirst.mockImplementation(async ({ where }: any) => {
+    const base = where.AND ? where.AND[0] : where;
+    if (where.AND && !scope.inScope) return null;
+    return base.id === STUDENT && base.school_id === SCHOOL ? { id: STUDENT } : null;
+  });
   prisma.pastoral_category.findFirst.mockImplementation(async ({ where }: any) => {
     if (where.school_id !== SCHOOL) return null;
     if (where.id === CAT) return { id: CAT, school_id: SCHOOL, kind: 'pastoral', is_safeguarding: false, archived_at: null };
@@ -154,9 +162,35 @@ describe('permission matrix', () => {
 });
 
 describe('PastoralService', () => {
-  test('admins hold every pastoral key by default', async () => {
+  test('admins hold every pastoral key except safeguarding, which is never implied', async () => {
     const { svc } = service(db());
-    expect(await svc.me('admin')).toEqual({ canRead: true, canCreate: true, canUpdate: true, canSafeguard: true, canManageSettings: true });
+    expect(await svc.me('admin')).toEqual({ canRead: true, canCreate: true, canUpdate: true, canSafeguard: false, canManageSettings: true });
+    const err = await expectRejection(svc.get('admin', SG_NOTE));
+    expect(err).toBeInstanceOf(NotFoundException);
+  });
+
+  test('note text is stored encrypted against the note id and read back in clear', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    await svc.create('lead', STUDENT, { categoryId: CAT, occurredOn: '2026-11-01', body: ' Private text ' });
+    const data = prisma.pastoral_note.create.mock.calls[0][0].data;
+    expect(isSealedText(data.body)).toBe(true);
+    expect(openText('pastoral_note.body', data.id, data.body)).toBe('Private text');
+    // Sealed rows and old plain-text rows both read as text.
+    prisma.pastoral_note.findUnique.mockResolvedValue(note({ body: sealText('pastoral_note.body', NOTE, 'Sealed') }));
+    expect((await svc.get('lead', NOTE)).body).toBe('Sealed');
+    prisma.pastoral_note.findUnique.mockResolvedValue(note({ body: 'Legacy plain' }));
+    expect((await svc.get('lead', NOTE)).body).toBe('Legacy plain');
+    // A sealed value moved to another row does not open.
+    prisma.pastoral_note.findUnique.mockResolvedValue(note({ body: sealText('pastoral_note.body', SG_NOTE, 'Moved') }));
+    expect((await svc.get('lead', NOTE)).body).not.toBe('Moved');
+  });
+
+  test('a blank note is refused (the column only sees ciphertext)', async () => {
+    const err = await expectRejection(
+      service(db()).svc.create('lead', STUDENT, { categoryId: CAT, occurredOn: '2026-11-01', body: '   ' }),
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
   });
 
   test('a teacher can write a note and see their own, but not read others', async () => {
@@ -166,7 +200,9 @@ describe('PastoralService', () => {
       where.id === NOTE ? note({ author_id: 'teacher' }) : sgNote(),
     );
     await svc.create('teacher', STUDENT, { categoryId: CAT, occurredOn: '2026-11-01', body: ' Kind ' });
-    expect(prisma.pastoral_note.create.mock.calls[0][0].data).toMatchObject({ author_id: 'teacher', body: 'Kind', is_safeguarding: false });
+    const created = prisma.pastoral_note.create.mock.calls[0][0].data;
+    expect(created).toMatchObject({ author_id: 'teacher', is_safeguarding: false });
+    expect(openText('pastoral_note.body', created.id, created.body)).toBe('Kind');
     await svc.list('teacher', {});
     expect(prisma.pastoral_note.findMany.mock.calls.at(-1)![0].where.AND[0]).toEqual({
       school_id: SCHOOL,
@@ -194,7 +230,7 @@ describe('PastoralService', () => {
 
   test('every read of a safeguarding note is audit-logged, and never sent to webhooks', async () => {
     const prisma = db();
-    prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_feature_rows: [] });
     prisma.organisation.findFirst.mockResolvedValue({ features: { integrations: true } });
     prisma.school_webhook.findMany.mockResolvedValue([{ id: 'hook' }]);
     prisma.pastoral_note.findMany.mockResolvedValue([note(), sgNote()]);
@@ -203,23 +239,44 @@ describe('PastoralService', () => {
     await svc.get('dsl', SG_NOTE);
     await svc.list('dsl', {});
     const reads = auditRows(prisma).filter((r: any) => r.action === 'read');
-    expect(reads).toHaveLength(2);
-    expect(reads.every((r: any) => r.entity === 'pastoral_note' && r.entity_id === SG_NOTE)).toBe(true);
+    // The note opened, the safeguarding note in the list, and the list view.
+    expect(reads.filter((r: any) => r.entity_id === SG_NOTE)).toHaveLength(2);
+    const view = reads.find((r: any) => r.entity_id === null);
+    expect(view.changes.view.after).toBe('list');
+    expect(view.changes.note_ids.after).toEqual([NOTE, SG_NOTE]);
     // Nothing about the note text in the audit entry.
     expect(JSON.stringify(reads)).not.toContain('Helped a classmate');
     expect(prisma.webhook_delivery.createMany).not.toHaveBeenCalled();
   });
 
-  test('reading plain notes writes no audit entry', async () => {
+  test('reading notes of any category is audited: one entry per note opened, one per view', async () => {
     const prisma = db();
     prisma.pastoral_note.findMany.mockResolvedValue([note()]);
-    await service(prisma).svc.list('lead', {});
-    expect(prisma.audit_log.create).not.toHaveBeenCalled();
+    const { svc } = service(prisma);
+    await svc.timeline('lead', STUDENT, {});
+    await svc.get('lead', NOTE);
+    const reads = auditRows(prisma).filter((r: any) => r.action === 'read');
+    expect(reads).toHaveLength(2);
+    expect(reads[0]).toMatchObject({ entity: 'pastoral_note', entity_id: STUDENT });
+    expect(reads[0].changes.view.after).toBe('timeline');
+    expect(reads[1]).toMatchObject({ entity: 'pastoral_note', entity_id: NOTE });
+    expect(JSON.stringify(reads)).not.toContain('Helped a classmate');
+  });
+
+  test('the export is audited as an export with its row count', async () => {
+    const prisma = db();
+    prisma.pastoral_note.findMany.mockResolvedValue([note(), note({ id: 'n2' })]);
+    await service(prisma).svc.exportCsv('lead', { status: 'open' });
+    const exp = auditRows(prisma).find((r: any) => r.action === 'export');
+    expect(exp).toMatchObject({ entity: 'pastoral_note', school_id: SCHOOL });
+    expect(exp.changes.rows.after).toBe(2);
+    expect(exp.changes.scope.after).toBe('school');
+    expect(exp.changes.filters.after).toEqual({ status: 'open' });
   });
 
   test('writes are audited without the note text and without webhooks', async () => {
     const prisma = db();
-    prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ name: 'A', disabled_feature_rows: [] });
     prisma.organisation.findFirst.mockResolvedValue({ features: { integrations: true } });
     prisma.school_webhook.findMany.mockResolvedValue([{ id: 'hook' }]);
     await service(prisma).svc.create('lead', STUDENT, { categoryId: CAT, occurredOn: '2026-11-01', body: 'Secret text' });
@@ -342,8 +399,79 @@ describe('PastoralService', () => {
 
   test('making a category safeguarding moves its notes with it', async () => {
     const prisma = db();
-    await service(prisma).svc.updateCategory('admin', CAT, { isSafeguarding: true });
+    prisma.pastoral_note.updateMany.mockResolvedValue({ count: 3 });
+    await service(prisma).svc.updateCategory('sgadmin', CAT, { isSafeguarding: true });
     expect(prisma.pastoral_note.updateMany).toHaveBeenCalledWith({ where: { category_id: CAT }, data: { is_safeguarding: true } });
+    const restricted = auditRows(prisma).find((r: any) => r.entity === 'pastoral_category_restricted');
+    expect(restricted).toBeDefined();
+    expect(JSON.stringify(restricted)).toContain('notes_moved');
+  });
+
+  test('changing the safeguarding flag either way needs the safeguarding key, even for admins', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    expect(await expectRejection(svc.updateCategory('admin', CAT, { isSafeguarding: true }))).toBeInstanceOf(ForbiddenException);
+    prisma.pastoral_category.findFirst.mockResolvedValue({
+      id: CAT, school_id: SCHOOL, kind: 'pastoral', label: 'Secret', is_safeguarding: true, archived_at: null, position: 0,
+    });
+    expect(await expectRejection(svc.updateCategory('admin', CAT, { isSafeguarding: false }))).toBeInstanceOf(ForbiddenException);
+    // Nor rename a restricted one; the placeholder sent back is no rename.
+    expect(await expectRejection(svc.updateCategory('admin', CAT, { label: 'Other' }))).toBeInstanceOf(ForbiddenException);
+    prisma.pastoral_category.findMany.mockResolvedValue([]);
+    await svc.updateCategory('admin', CAT, { label: 'Restricted category', position: 2 });
+    const data = prisma.pastoral_category.update.mock.calls[0][0].data;
+    expect(data).toEqual({ position: 2 });
+    expect(prisma.pastoral_note.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('restricted category labels are shown only to safeguarding holders', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    prisma.pastoral_category.count.mockResolvedValue(6);
+    prisma.pastoral_category.findMany.mockResolvedValue([
+      { id: CAT, label: 'Pastoral', kind: 'pastoral', is_safeguarding: false, position: 0, archived_at: null },
+      { id: SG_CAT, label: 'Child protection', kind: 'safeguarding', is_safeguarding: true, position: 1, archived_at: null },
+    ]);
+    const forAdmin = await svc.categories('admin');
+    expect(forAdmin[1]).toMatchObject({ label: 'Restricted category', labelHidden: true, isSafeguarding: true });
+    expect(forAdmin[0]).toMatchObject({ label: 'Pastoral', labelHidden: false });
+    const forDsl = await svc.categories('sgadmin');
+    expect(forDsl[1]).toMatchObject({ label: 'Child protection', labelHidden: false });
+  });
+
+  test('without pastoral-note:read, notes can only be written about students in scope', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    scope.inScope = false;
+    const err = await expectRejection(svc.create('teacher', STUDENT, { categoryId: CAT, occurredOn: '2026-11-01', body: 'x' }));
+    expect(err).toBeInstanceOf(NotFoundException);
+    const where = prisma.student.findFirst.mock.calls[0][0].where;
+    expect(where.AND[0]).toEqual({ id: STUDENT, school_id: SCHOOL });
+    // A reader is not narrowed.
+    await svc.list('lead', { studentId: STUDENT });
+    expect(prisma.student.findFirst.mock.calls[1][0].where).toEqual({ id: STUDENT, school_id: SCHOOL });
+  });
+
+  test('the withheld reason is stored encrypted against the note id; notes carry canWithhold', async () => {
+    const prisma = db();
+    const { svc } = service(prisma);
+    prisma.pastoral_note.findUnique.mockImplementation(async ({ where, select }: any) => {
+      if (select && !select.id) return { sar_withheld: false, sar_withheld_reason: null };
+      return where.id === SG_NOTE ? sgNote() : null;
+    });
+    const res = await svc.setSarWithheld('dsl', SG_NOTE, { withheld: true, reason: 'Third-party data' });
+    const stored = prisma.pastoral_note.update.mock.calls[0][0].data.sar_withheld_reason;
+    expect(isSealedText(stored)).toBe(true);
+    expect(openText('pastoral_note.sar_withheld_reason', SG_NOTE, stored)).toBe('Third-party data');
+    expect(openText('pastoral_note.sar_withheld_reason', NOTE, stored)).not.toBe('Third-party data');
+    expect(res.canWithhold).toBe(true);
+
+    prisma.pastoral_note.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === NOTE ? note({ sar_withheld: true, sar_withheld_reason: sealText('pastoral_note.sar_withheld_reason', NOTE, 'Why') }) : null,
+    );
+    const shown = await svc.get('lead', NOTE);
+    expect(shown.sarWithheldReason).toBe('Why');
+    expect(shown.canWithhold).toBe(false);
   });
 
   test('only school admins change categories and retention', async () => {
@@ -408,13 +536,17 @@ describe('never exposed outside staff pastoral routes', () => {
     }
   });
 
-  test('only src/pastoral and the retention purge query the notes table', () => {
+  test('pastoral, retention purge and staff-only exports query the notes table', () => {
     const touching = files(SRC)
       .filter((f) => !f.includes('/generated/'))
       .filter((f) => /\b(?:prisma|tx|db)\.pastoral_note\b/.test(readFileSync(f, 'utf8')))
       .map((f) => f.slice(SRC.length + 1))
       .sort();
-    expect(touching).toEqual(['pastoral/pastoral.service.ts', 'retention/retention.service.ts']);
+    expect(touching).toEqual([
+      'data-export/collectors/staff-only.ts',
+      'pastoral/pastoral.service.ts',
+      'retention/retention.service.ts',
+    ]);
   });
 
   test('the module exports nothing for other modules to use', () => {

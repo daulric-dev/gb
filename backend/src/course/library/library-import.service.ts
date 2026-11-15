@@ -258,10 +258,14 @@ export class LibraryImportService {
       const lti = await this.files.ltiDeployments(row.school_id, tools);
 
       const outcome = await this.prisma.$transaction(async (tx) => {
-        // Lock the row; whoever gets here second finds it done and stops.
-        const locked = await tx.$queryRaw<{ status: string }[]>`
-          SELECT status FROM course.library_import WHERE id = ${row.id}::uuid FOR UPDATE`;
-        if (locked[0]?.status !== 'copying') return 'skipped' as const;
+        // Claim the row with a compare-and-set update, which also holds its
+        // row lock to the end of the transaction: whoever gets here second
+        // waits, then finds it no longer copying and stops.
+        const claimed = await tx.library_import.updateMany({
+          where: { id: row.id, status: 'copying' },
+          data: { updated_at: new Date() },
+        });
+        if (claimed.count !== 1) return 'skipped' as const;
 
         let targetId = row.target_course_id;
         if (row.mode === 'new_course') {
@@ -410,10 +414,14 @@ export class LibraryImportService {
       filesTotal: r.files_total,
       filesDone: r.files_done,
       result: r.result,
-      notes: r.notes,
+      notes: stringList(r.notes),
       error: r.error,
       createdAt: r.created_at.toISOString(),
       finishedAt: r.finished_at?.toISOString() ?? null,
     };
   }
+}
+
+function stringList(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

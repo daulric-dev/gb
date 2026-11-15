@@ -388,7 +388,14 @@ describe('allocation in the service', () => {
     const owner: Record<string, string> = { 'sub-1': 'stu-1', 'sub-2': 'stu-2', 'sub-3': 'stu-3' };
     for (const r of rows) expect(owner[r.submission_id]).not.toBe(r.reviewer_id);
     expect(prisma.peer_review_setting.update.mock.calls[0][0].data.started_at).toEqual(NOW);
-    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(prisma.job_lease.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ key: 'peer-review:activity:act-1' }),
+    });
+    expect(prisma.job_lease.updateMany).toHaveBeenCalledWith({
+      where: { key: 'peer-review:activity:act-1', owner_token: expect.any(String) },
+      // Taken and released outside the allocation transaction, on the real clock.
+      data: { owner_token: null, expires_at: null, updated_at: expect.any(Date) },
+    });
     expect(notices[0][0]).toBe('assigned');
   });
 
@@ -399,6 +406,28 @@ describe('allocation in the service', () => {
     await expect(
       service.addAllocation('t', 'act-1', { reviewerId: 'stu-1', submissionId: 'sub-1' }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  test('a review cannot be moved to the author of the submission', async () => {
+    // alloc-1 reviews sub-1, whose author is stu-1.
+    const { service, prisma } = build((p) => {
+      p.submission.findUnique.mockResolvedValue({ id: 'sub-1', activity_id: 'act-1', student_id: 'stu-1' });
+    });
+    await expect(service.reassign('t', 'act-1', 'alloc-1', 'stu-1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.peer_review_allocation.update).not.toHaveBeenCalled();
+  });
+
+  test('allocation refuses the whole batch if a self-review ever slips into it', async () => {
+    const { service, prisma } = build((p) => {
+      p.submission.findMany.mockResolvedValue([{ id: 'sub-1', student_id: 'stu-1' }]);
+      p.course_student.findMany.mockResolvedValue([{ student_id: 'stu-1' }]);
+    });
+    // With one submitter the algorithm finds nobody to review; nothing is
+    // written, and in particular never a self-review.
+    await service.allocateNow(ACTIVITY, { ...SETTING, started_at: null } as any, NOW);
+    for (const call of prisma.peer_review_allocation.createMany.mock.calls) {
+      for (const r of call[0].data) expect(r.reviewer_id).not.toBe('stu-1');
+    }
   });
 
   test('a review already handed in cannot be reassigned', async () => {

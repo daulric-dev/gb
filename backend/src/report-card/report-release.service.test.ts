@@ -45,7 +45,7 @@ function seed(prisma: MockPrisma) {
   prisma.user_profile.findUnique.mockResolvedValue({ school_id: SCHOOL, account_type: 'staff' });
   prisma.organisation.findFirst.mockResolvedValue({ features: {} });
   prisma.school.findUnique.mockImplementation(async ({ where }: any) =>
-    where.id === SCHOOL ? { name: 'Hillside Academy', logo_path: null, disabled_features: [] } : null,
+    where.id === SCHOOL ? { name: 'Hillside Academy', logo_path: null, disabled_feature_rows: [] } : null,
   );
   prisma.term.findFirst.mockImplementation(async ({ where }: any) =>
     where.id === TERM && where.academic_year.school_id === SCHOOL
@@ -165,7 +165,7 @@ describe('report generation', () => {
     expect(await ctx.generation.generate({ schoolId: SCHOOL, termId: TERM, studentId: S1 })).toBe('skipped');
 
     ctx.prisma.report_release.findUnique.mockResolvedValue({ published_at: published });
-    ctx.prisma.school.findUnique.mockResolvedValue({ name: 'x', logo_path: null, disabled_features: ['report_cards'] });
+    ctx.prisma.school.findUnique.mockResolvedValue({ name: 'x', logo_path: null, disabled_feature_rows: [{ feature: 'report_cards' }] });
     const off = new ReportGenerationService(
       ctx.prisma as any,
       ctx.storage as any,
@@ -332,7 +332,7 @@ describe('publishing and what students see', () => {
 
     // Feature off for the school: 403 FEATURE_DISABLED.
     releaseRow.published_at = new Date();
-    ctx.prisma.school.findUnique.mockResolvedValue({ name: 'x', logo_path: null, disabled_features: ['report_cards'] });
+    ctx.prisma.school.findUnique.mockResolvedValue({ name: 'x', logo_path: null, disabled_feature_rows: [{ feature: 'report_cards' }] });
     const fresh = new StudentReportsService(
       ctx.prisma as any,
       ctx.storage as any,
