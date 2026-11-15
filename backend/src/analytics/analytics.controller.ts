@@ -58,7 +58,7 @@ export class AnalyticsController {
   ) {}
 
   @Get('school')
-  @RequirePermission('analytics', 'read')
+  @RequirePermission('analytics', 'read', 'active')
   async school(@Req() req: any, @Query() q: SchoolFilterDto) {
     const userId = req.user.id as string;
     const result = await this.analytics.school(userId, filterOf(q));
@@ -70,7 +70,7 @@ export class AnalyticsController {
   }
 
   @Get('school/at-risk')
-  @RequirePermission('analytics', 'read')
+  @RequirePermission('analytics', 'read', 'active')
   async atRisk(@Req() req: any, @Query() q: SchoolFilterDto) {
     const userId = req.user.id as string;
     const result = await this.analytics.schoolAtRisk(userId, filterOf(q));
@@ -82,7 +82,7 @@ export class AnalyticsController {
   }
 
   @Get('school/export')
-  @RequirePermission('analytics', 'read')
+  @RequirePermission('analytics', 'read', 'active')
   @ApiProduces('text/csv')
   @RequireStepUp()
   async export(@Req() req: any, @Query() q: SchoolExportDto, @Res() reply: FastifyReply) {
@@ -99,7 +99,7 @@ export class AnalyticsController {
 
   @Post('school/refresh')
   @HttpCode(202)
-  @RequirePermission('analytics', 'read')
+  @RequirePermission('analytics', 'read', 'active')
   async refresh(@Req() req: any) {
     const { schoolId } = await this.analytics.memberSchool(req.user.id as string);
     return this.scheduler.refreshNow(schoolId);
@@ -111,7 +111,7 @@ export class AnalyticsController {
   }
 
   @Put('settings')
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   async updateSettings(@Req() req: any, @Body() body: AnalyticsSettingsDto) {
     return this.analytics.updateSettings(req.user.id as string, body);
   }

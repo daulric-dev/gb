@@ -2,6 +2,7 @@ import { Controller, Get, Param, Res } from '@nestjs/common';
 import { ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { Throttle } from '@nestjs/throttler';
+import { Public } from '@/auth/public.decorator';
 import { StudentReportsService } from './student-reports.service';
 import { sendPdf } from './report-file';
 
@@ -10,6 +11,7 @@ import { sendPdf } from './report-file';
  * credential, names one document, and lasts five minutes. The feature,
  * publish state and storage key are checked again on every use.
  */
+@Public()
 @ApiTags('Report Cards')
 @Controller('report-cards/files')
 export class ReportLinkController {

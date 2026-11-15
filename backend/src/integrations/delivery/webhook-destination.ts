@@ -27,6 +27,22 @@ const RESTRICTED_IPV4_RANGES: [string, number][] = [
   ['240.0.0.0', 4],
 ];
 
+/**
+ * Never allowed, whatever `allowPrivate` says.
+ *
+ * Link-local carries the cloud instance metadata services (169.254.169.254 on
+ * AWS, GCP and Azure; fd00:ec2::254 on AWS IPv6), which hand out credentials
+ * to anything that can make an HTTP request from the instance. `allowPrivate`
+ * exists so an organisation can reach a service on its own network - an
+ * on-premise Ollama, an internal OneRoster server. Nothing legitimate lives on
+ * a link-local address, so the switch does not reach these.
+ */
+const ALWAYS_BLOCKED_IPV4: [string, number][] = [['169.254.0.0', 16]];
+const ALWAYS_BLOCKED_IPV6 = [
+  { base: 'fe80::', prefix: 10 },
+  { base: 'fd00:ec2::', prefix: 32 },
+];
+
 const IPV6_GLOBAL_UNICAST = { base: '2000::', prefix: 3 };
 const RESTRICTED_IPV6_RANGES = [
   { base: '2001::', prefix: 23 },
@@ -77,6 +93,11 @@ export async function resolveWebhookDestinations(
     throw new Error('Webhook host did not resolve to an IP address');
   }
 
+  // Checked before anything else: no setting makes these reachable.
+  if (addresses.some(({ address }) => isAlwaysBlocked(address))) {
+    throw new Error('Webhook host resolves to a link-local or metadata address');
+  }
+
   const allowPrivate =
     options.allowPrivate ?? process.env.WEBHOOK_ALLOW_PRIVATE === 'true';
   if (!allowPrivate) {
@@ -88,6 +109,69 @@ export async function resolveWebhookDestinations(
   // Duplicates add nothing to try.
   const seen = new Set<string>();
   return addresses.filter(({ address }) => !seen.has(address) && seen.add(address));
+}
+
+/** `::ffff:0:0/96` (v4-mapped) and `::/96` (v4-compatible) carry an IPv4 address. */
+const V4_MAPPED_PREFIX = '::ffff:0:0';
+const V4_EMBEDDED_PREFIX_BITS = 96;
+
+/**
+ * The IPv4 address carried inside an IPv6 one, or null.
+ *
+ * `::ffff:169.254.169.254` is an IPv6 literal to `isIP`, and a dual-stack
+ * socket connects it to 169.254.169.254 all the same - so the IPv4 rules have
+ * to be applied to it. `new URL()` makes this worse by canonicalising the host
+ * to `[::ffff:a9fe:a9fe]`, the same address written in hex, so matching on the
+ * text would not catch it either. Comparing numbers catches every spelling.
+ */
+function embeddedIpv4(address: string): bigint | null {
+  let value: bigint;
+  try {
+    value = ipv6Value(address);
+  } catch {
+    return null;
+  }
+  const mapped = inCidrValue(
+    value,
+    ipv6Value(V4_MAPPED_PREFIX),
+    V4_EMBEDDED_PREFIX_BITS,
+    128,
+  );
+  const compatible = inCidrValue(value, 0n, V4_EMBEDDED_PREFIX_BITS, 128);
+  if (!mapped && !compatible) return null;
+  return value & 0xffffffffn;
+}
+
+function isBlockedIpv4(value: bigint): boolean {
+  return ALWAYS_BLOCKED_IPV4.some(([base, prefix]) =>
+    inCidrValue(value, ipv4Value(base), prefix, 32),
+  );
+}
+
+/** Link-local and cloud metadata, refused however the install is configured. */
+export function isAlwaysBlocked(address: string): boolean {
+  const family = isIP(address);
+  try {
+    if (family === 4) return isBlockedIpv4(ipv4Value(address));
+    if (family === 6) {
+      if (
+        ALWAYS_BLOCKED_IPV6.some(({ base, prefix }) =>
+          inCidr(address, base, prefix, 128),
+        )
+      ) {
+        return true;
+      }
+      // An IPv4 address written as IPv6 is still that IPv4 address.
+      const embedded = embeddedIpv4(address);
+      return embedded !== null && isBlockedIpv4(embedded);
+    }
+  } catch {
+    // An address neither check could parse is not one we will connect to.
+    return true;
+  }
+  // Not an IP address at all: nothing to connect to, and the callers below
+  // treat it as non-public anyway.
+  return false;
 }
 
 function isPublicAddress(address: string): boolean {
@@ -115,6 +199,15 @@ function inCidr(
 ): boolean {
   const value = bitLength === 32 ? ipv4Value(address) : ipv6Value(address);
   const network = bitLength === 32 ? ipv4Value(base) : ipv6Value(base);
+  return inCidrValue(value, network, prefix, bitLength);
+}
+
+function inCidrValue(
+  value: bigint,
+  network: bigint,
+  prefix: number,
+  bitLength: 32 | 128,
+): boolean {
   const shift = BigInt(bitLength - prefix);
   return (value >> shift) === (network >> shift);
 }

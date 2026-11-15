@@ -64,47 +64,47 @@ export class SchoolWebhookController {
     return schoolId;
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get()
   async list(@Req() req: Req) {
     return this.webhooks.list(await this.school(req));
   }
 
   /** The integrations activity log, newest first. */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @QueryMethod('audit')
   async auditLog(@Req() req: Req, @Body() dto: ListIntegrationAuditQueryDto) {
     return this.audit.list(await this.school(req), { limit: dto.limit, before: dto.before });
   }
 
   /** The secret is in the answer, once. */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @RequireStepUp()
   @Post()
   async create(@Req() req: Req, @Body() dto: CreateWebhookDto) {
     return this.webhooks.create(await this.school(req), dto, asSchoolAdmin(req));
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get('deliveries/:deliveryId')
   async delivery(@Req() req: Req, @Param('deliveryId', new ParseUUIDPipe()) deliveryId: string) {
     return this.webhooks.delivery(await this.school(req), deliveryId);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('deliveries/:deliveryId/redeliver')
   @HttpCode(200)
   async redeliver(@Req() req: Req, @Param('deliveryId', new ParseUUIDPipe()) deliveryId: string) {
     return this.webhooks.redeliver(await this.school(req), deliveryId, asSchoolAdmin(req));
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get(':id')
   async get(@Req() req: Req, @Param('id', new ParseUUIDPipe()) id: string) {
     return this.webhooks.get(await this.school(req), id);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @RequireStepUp()
   @Patch(':id')
   async update(
@@ -115,7 +115,7 @@ export class SchoolWebhookController {
     return this.webhooks.update(await this.school(req), id, dto, asSchoolAdmin(req));
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @RequireStepUp()
   @Delete(':id')
   @HttpCode(204)
@@ -123,7 +123,7 @@ export class SchoolWebhookController {
     await this.webhooks.remove(await this.school(req), id, asSchoolAdmin(req));
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @RequireStepUp()
   @Post(':id/rotate-secret')
   @HttpCode(200)
@@ -136,14 +136,14 @@ export class SchoolWebhookController {
   }
 
   /** Sends a `ping` now. No step-up: it changes nothing. Audit-logged. */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post(':id/test')
   @HttpCode(200)
   async test(@Req() req: Req, @Param('id', new ParseUUIDPipe()) id: string) {
     return this.webhooks.test(await this.school(req), id, asSchoolAdmin(req));
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @QueryMethod(':id/deliveries')
   async deliveries(
     @Req() req: Req,

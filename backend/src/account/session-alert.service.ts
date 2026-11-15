@@ -5,6 +5,7 @@ import { primaryOrigin } from '@/config/origins';
 import { sessionAlertsEnabled } from './session.config';
 import { newSignInEmail } from './templates/new-sign-in';
 import { tokenReuseEmail } from './templates/token-reuse';
+import { rotationRecoveredEmail } from './templates/rotation-recovered';
 
 export interface AlertSession {
   userId: string;
@@ -37,6 +38,18 @@ export class SessionAlertService {
   tokenReuse(session: AlertSession, at = new Date()): Promise<void> {
     return this.deliver('token reuse', session, (devicesUrl) =>
       tokenReuseEmail({ device: session.device, ip: session.ip, at, devicesUrl }),
+    );
+  }
+
+  /**
+   * "A GradeBook sign-in was recovered": a replaced token was accepted again
+   * because the rotating response plainly never reached the client. Usually a
+   * dropped connection, but indistinguishable from a copied token, so the
+   * account is told.
+   */
+  rotationRecovered(session: AlertSession, at = new Date()): Promise<void> {
+    return this.deliver('rotation recovered', session, (devicesUrl) =>
+      rotationRecoveredEmail({ device: session.device, ip: session.ip, at, devicesUrl }),
     );
   }
 

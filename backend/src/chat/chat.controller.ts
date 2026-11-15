@@ -46,7 +46,7 @@ export class ChatController {
     private readonly prisma: PrismaService,
   ) {}
 
-  @RequirePermission('chat', 'read')
+  @RequirePermission('chat', 'read', 'active')
   @Get('stream')
   async stream(@Req() req: any, @Res() reply: FastifyReply): Promise<void> {
     const userId = req.user.id as string;
@@ -126,7 +126,7 @@ export class ChatController {
 
   // User ids currently online in the caller's school (for a student, only
   // the staff they may message).
-  @RequirePermission('chat', 'read')
+  @RequirePermission('chat', 'read', 'active')
   @Get('presence')
   async presenceList(@Req() req: any): Promise<{ online: string[] }> {
     const userId = req.user.id as string;
@@ -143,14 +143,14 @@ export class ChatController {
 
   // Directory / counters
 
-  @RequirePermission('chat', 'read')
+  @RequirePermission('chat', 'read', 'active')
   @Get('users')
   async users(@Req() req: any) {
     const userId = req.user.id as string;
     return this.chat.listMessageableUsers(userId);
   }
 
-  @RequirePermission('chat', 'read')
+  @RequirePermission('chat', 'read', 'active')
   @Get('unread-count')
   async unreadCount(@Req() req: any) {
     const userId = req.user.id as string;
@@ -159,14 +159,14 @@ export class ChatController {
 
   // Conversations
 
-  @RequirePermission('chat', 'read')
+  @RequirePermission('chat', 'read', 'active')
   @Get('conversations')
   async listConversations(@Req() req: any) {
     const userId = req.user.id as string;
     return this.chat.listConversations(userId);
   }
 
-  @RequirePermission('chat', 'create')
+  @RequirePermission('chat', 'create', 'active')
   @Post('conversations')
   async createConversation(
     @Req() req: any,
@@ -176,7 +176,7 @@ export class ChatController {
     return this.chat.getOrCreateDirect(userId, dto.userId);
   }
 
-  @RequirePermission('chat', 'create')
+  @RequirePermission('chat', 'create', 'active')
   @RequireFeature('messaging', 'chat_channels')
   @ChatStaffOnly()
   @Post('channels')
@@ -185,7 +185,7 @@ export class ChatController {
     return this.chat.createChannel(userId, dto.title, dto.memberIds);
   }
 
-  @RequirePermission('chat', 'read')
+  @RequirePermission('chat', 'read', 'active')
   @QueryMethod('conversations/:id/messages')
   async listMessages(
     @Req() req: any,
@@ -199,7 +199,7 @@ export class ChatController {
     });
   }
 
-  @RequirePermission('chat', 'create')
+  @RequirePermission('chat', 'create', 'active')
   @Post('conversations/:id/messages')
   async sendMessage(
     @Req() req: any,
@@ -210,7 +210,7 @@ export class ChatController {
     return this.chat.sendMessage(userId, id, dto.body);
   }
 
-  @RequirePermission('chat', 'update')
+  @RequirePermission('chat', 'update', 'active')
   @Post('conversations/:id/read')
   async markRead(@Req() req: any, @Param('id') id: string) {
     const userId = req.user.id as string;
@@ -219,7 +219,7 @@ export class ChatController {
 
   // ── Messages ─────────────────────────────────────────────────────────────────
 
-  @RequirePermission('chat', 'update')
+  @RequirePermission('chat', 'update', 'active')
   @Patch('messages/:id')
   async editMessage(
     @Req() req: any,
@@ -230,14 +230,14 @@ export class ChatController {
     return this.chat.editMessage(userId, id, dto.body);
   }
 
-  @RequirePermission('chat', 'delete')
+  @RequirePermission('chat', 'delete', 'active')
   @Delete('messages/:id')
   async deleteMessage(@Req() req: any, @Param('id') id: string) {
     const userId = req.user.id as string;
     return this.chat.deleteMessage(userId, id);
   }
 
-  @RequirePermission('chat', 'update')
+  @RequirePermission('chat', 'update', 'active')
   @Post('messages/:id/action')
   async act(
     @Req() req: any,

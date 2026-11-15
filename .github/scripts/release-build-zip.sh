@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Packages the frontend, backend, docs and mobile sources, the self-hosting
-# files in infrastructure/ and the root workspace files into
-# gradebook-<VERSION>.zip and writes its checksum to SHA256SUMS, both in
-# the current directory (the repo root).
+# Packages the frontend, backend and docs sources, the self-hosting files in
+# infrastructure/ and the root workspace files into gradebook-<VERSION>.zip
+# and writes its checksum to SHA256SUMS, both in the current directory (the
+# repo root).
 #
 # Called by: .github/workflows/release.yml, job "package", step "Build zip".
 # Env:       VERSION - resolved version from release-resolve-version.sh
@@ -10,14 +10,17 @@
 set -euo pipefail
 
 name="gradebook-$VERSION"
-# git archive only takes tracked files: no node_modules, build
-# output or .env files. mobile/ is a root workspace, so `bun install
-# --frozen-lockfile` needs its package.json; the rest of its source lets a
-# self-hoster build the app against their own server. The generated native
-# iOS project is left out (`expo prebuild` recreates it).
+# git archive only takes tracked files: no node_modules, build output or .env
+# files.
+#
+# mobile/ is deliberately left out. It is a root workspace and bun.lock still
+# lists it, which is fine: `bun install --frozen-lockfile` prints "skipped 1
+# workspace listed in bun.lock but not on disk" and installs the rest
+# (verified on Bun 1.4.4), and turbo resolves the remaining three packages.
+# A self-hoster who wants to build the app against their own server takes it
+# from the repository, where the Expo tooling and mobile/README.md are.
 git archive --format=zip --prefix="$name/" -o "$name.zip" HEAD \
-  frontend backend docs mobile infrastructure \
-  ':(exclude)mobile/ios' \
+  frontend backend docs infrastructure \
   ':(exclude,glob)**/.env' \
   ':(exclude,glob)**/.env.local' \
   ':(exclude,glob)**/.env.*.local' \

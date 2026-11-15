@@ -47,7 +47,7 @@ export class StudentErasureController {
    * (`account: 'none' | 'deleted' | 'unlinked'`) and how many rows of each
    * kind go (`counts`, pastoral notes left out).
    */
-  @RequirePermission('student', 'erase')
+  @RequirePermission('student', 'erase', 'active')
   @Get(':id/erasure-preview')
   async preview(@Req() req: any, @Param('id', new ParseUUIDPipe()) id: string) {
     const schoolId = await this.school(req.user.id as string);
@@ -64,7 +64,7 @@ export class StudentErasureController {
   }
 
   /** Erase the student record for good (step-up). */
-  @RequirePermission('student', 'erase')
+  @RequirePermission('student', 'erase', 'active')
   @RequireStepUp()
   @Throttle(ERASE_STUDENT_THROTTLE)
   @Delete(':id')

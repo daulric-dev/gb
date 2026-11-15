@@ -11,6 +11,7 @@ import { SessionAlertService } from './session-alert.service';
 import {
   KNOWN_DEVICE_WINDOW_MS,
   renewAfterMs,
+  lostRotationGraceMs,
   rotationGraceMs,
   sessionAlertsEnabled,
   sessionPolicy,
@@ -30,8 +31,13 @@ export const RENEW_AFTER_MS = 24 * 60 * 60_000;
  * How long a replaced token can still recover a session whose client never
  * got the rotation (a response lost on a flaky mobile connection): only from
  * the same user agent, and only while the new token has never been presented.
+ *
+ * The default, and the value when SESSION_LOST_ROTATION_GRACE_MINUTES is not
+ * set. A stolen cookie replayed before the real client's next request meets
+ * the same conditions, so the window is kept short and every recovery emails
+ * the account.
  */
-export const LOST_ROTATION_GRACE_MS = 24 * 60 * 60_000;
+export const LOST_ROTATION_GRACE_MS = 60 * 60_000;
 const CACHE_TTL_S = 60;
 /** How long a step-up confirmation lets a session change SSO settings. */
 export const STEP_UP_WINDOW_MS = 10 * 60_000;
@@ -361,13 +367,22 @@ export class SessionService {
       // lost): nobody has used it, and the old one comes from the same client.
       const lostRotation =
         !row.rotation_confirmed_at &&
-        sinceRotation <= LOST_ROTATION_GRACE_MS &&
+        sinceRotation <= lostRotationGraceMs() &&
         !!row.user_agent &&
         row.user_agent === userAgentOf(req);
       if (inFlight || lostRotation) {
         // Let it through and hand the current token over again. Not cached,
         // so the grace period ends on time.
         this.sendRotated(reply, source.via, rotatedToken(source.token), row.expires_at);
+        // A lost rotation and a token copied before the real client's next
+        // request look identical from here, so say so: the account is told,
+        // and can sign the session out if it was not them. Requests already
+        // in flight (inFlight) are ordinary and stay quiet.
+        if (!inFlight) void this.alerts.rotationRecovered({
+          userId: row.app_user.id,
+          device: row.device ?? deviceLabel(row.user_agent),
+          ip: req.ip ?? null,
+        });
         return user;
       }
       await this.revokeForReuse(row, req);

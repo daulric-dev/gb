@@ -18,13 +18,13 @@ import { UpdateStudentRestrictionsDto } from './dto/update-restrictions.dto';
 export class StudentRestrictionController {
   constructor(private readonly restrictions: StudentRestrictionService) {}
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Get()
   get(@Req() req: { user: { id: string } }, @Param('studentId', ParseUUIDPipe) studentId: string) {
     return this.restrictions.get(req.user.id, studentId);
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Put()
   update(
     @Req() req: { user: { id: string } },

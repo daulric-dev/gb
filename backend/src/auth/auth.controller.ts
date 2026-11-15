@@ -23,6 +23,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
+import { Public } from './public.decorator';
 import { ImagesService } from '@/images/images.service';
 import { SendOtpDto } from '@/auth/dto/send-otp.dto';
 import { VerifyOtpDto } from '@/auth/dto/verify-otp.dto';
@@ -48,6 +49,7 @@ export class AuthController {
     private readonly emailDomains: EmailDomainService,
   ) {}
 
+  @Public()
   @Post('otp/send')
   @Throttle({
     'auth-strict': { limit: 5, ttl: 60 * 60 * 1000 },
@@ -64,12 +66,14 @@ export class AuthController {
    * local scripts. 404 unless NODE_ENV !== 'production' and
    * ALLOW_DEV_LOGIN=true.
    */
+  @Public()
   @ApiExcludeEndpoint()
   @Post('dev/code')
   async devCode(@Body() dto: SendOtpDto) {
     return this.authService.devCode(dto.email);
   }
 
+  @Public()
   @Post('otp/verify')
   @Throttle({
     'auth-strict': { limit: 10, ttl: 15 * 60 * 1000 },

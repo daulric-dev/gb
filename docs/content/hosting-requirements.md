@@ -206,6 +206,45 @@ for this reason. Record each provider, region and contract in the supplier
 register; see [Sub-processors](./gdpr/sub-processors.md). Enter the hosting
 location under **Organisation → Privacy** so the privacy notice states it.
 
+### Session cookie scope
+
+The session cookie (`gb_session`) is `HttpOnly`, `Secure` and `SameSite=Lax`.
+What it is *not*, by default, is pinned to a single host.
+
+The web app's middleware has to see the cookie to decide redirects, and it runs
+on the frontend's domain while the API sets the cookie on its own. So by
+default the API derives a shared parent from `FRONTEND_URL` and sets
+`Domain=.example.com` for `https://app.example.com`. The API logs the domain it
+chose at startup.
+
+A `Domain` cookie is sent to **every** subdomain of that domain, and
+`SameSite=Lax` does not narrow it: subdomains are same-site. In practice:
+
+- A cross-site scripting flaw on *any* host under that domain can read the
+  session cookie of anyone signed in to GradeBook.
+- Anyone who can serve content on *any* host under it — a marketing site on a
+  shared platform, a status page, a dangling CNAME someone else has claimed —
+  can also *overwrite* the cookie, pinning a visitor to a session they chose.
+
+So, when you keep the default: every hostname under that registrable domain
+must be one you control and trust. Do not run third-party-hosted sites, staging
+environments shared with vendors, or user-content hosts under it.
+
+The alternative, and the better choice where it is possible: serve the web app
+and the API from **one host** (for example `example.com` and
+`example.com/api`), and set `AUTH_COOKIE_DOMAIN=none`. The cookie is then
+host-only and no sibling can see it.
+
+`AUTH_COOKIE_DOMAIN` also has to be set explicitly when the derivation is
+wrong: when the API is on a different registrable domain from the app, or when
+the domain has a multi-part suffix (`app.example.co.uk` would derive
+`.co.uk`, a public suffix every browser refuses).
+
+`AUTH_COOKIE_SECURE=false` turns off the `Secure` flag. It exists so a
+production build can be run on your own machine over plain HTTP; the API
+refuses to start with it in production unless `LOCAL_PREVIEW=true`. Never set
+it on a real deployment.
+
 ### Strong sign-in for staff
 
 Staff can see many children's records. Make sure every staff account signs
@@ -228,7 +267,14 @@ Staff sessions are shorter than other accounts' by default
 
 - Configure the API load balancer's health check as `GET /health`. A healthy
   response requires PostgreSQL and S3 to respond; Redis must respond when
-  enabled. Redis being explicitly disabled is reported as acceptable.
+  enabled. Redis being explicitly disabled is reported as acceptable. The
+  response names which dependency is down only for a caller that reaches a
+  replica directly on the private network; anything relayed through a proxy
+  (which adds `X-Forwarded-For`) carries the status alone, with the same status
+  code. So a load balancer health check sees `{"status":"ok"}` and the right
+  code, while `docker compose exec app1 ...` sees the detail. `GET /` is the
+  liveness check (it answers as long as the process serves HTTP) and is what
+  the bundled Caddy polls.
 - Allow time for startup migrations and the health check's 40-second
   `start_period` when using the repository's Compose configuration. Avoid
   routing traffic to an instance until it passes health checks.
@@ -263,6 +309,9 @@ Staff sessions are shorter than other accounts' by default
   provider, or with an authenticator app.
 - [ ] `FRONTEND_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, and
   `NEXT_PUBLIC_STORAGE_URL` match the deployed origins.
+- [ ] Every hostname under the auth cookie's domain (logged at startup) is one
+  you control, or the app and API share one host with
+  `AUTH_COOKIE_DOMAIN=none`. `AUTH_COOKIE_SECURE` is not set to `false`.
 - [ ] Redis is shared and enabled if running multiple API instances.
 - [ ] `GET /health`, sign-in, file upload/download, and a live stream have been
   tested through the public proxy.

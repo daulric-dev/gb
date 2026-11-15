@@ -105,4 +105,4 @@ Accessibility is part of "done". Before opening a pull request that changes the 
 - Web: keyboard only; a screen reader (VoiceOver on macOS, NVDA on Windows); the browser's accessibility inspector; [axe DevTools](https://www.deque.com/axe/devtools/) or Lighthouse.
 - Mobile: VoiceOver and TalkBack on a real device; the Accessibility Inspector in Xcode; Android's Accessibility Scanner.
 
-See also [CONTRIBUTING.md](CONTRIBUTING.md) for the general workflow.
+See also [CONTRIBUTING.md](../CONTRIBUTING.md) for the general workflow.

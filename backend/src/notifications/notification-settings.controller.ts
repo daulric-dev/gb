@@ -60,13 +60,13 @@ export class SchoolPushContentController {
     return schoolId;
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get()
   async get(@Req() req: AuthedRequest) {
     return this.settings.schoolPushContent(await this.school(req.user.id));
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Put()
   async update(@Req() req: AuthedRequest, @Body() dto: UpdatePushContentDto) {
     return this.settings.setSchoolPushContent(

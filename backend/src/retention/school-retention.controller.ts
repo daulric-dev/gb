@@ -20,13 +20,13 @@ import { SchoolRetentionService } from './school-retention.service';
 export class SchoolRetentionController {
   constructor(private readonly retention: SchoolRetentionService) {}
 
-  @RequirePermission('student', 'erase')
+  @RequirePermission('student', 'erase', 'active')
   @Get()
   get(@Req() req: any) {
     return this.retention.view(req.user.id as string);
   }
 
-  @RequirePermission('student', 'erase')
+  @RequirePermission('student', 'erase', 'active')
   @RequireStepUp()
   @Put()
   update(@Req() req: any, @Body() dto: SchoolRetentionSettingsDto) {
@@ -34,7 +34,7 @@ export class SchoolRetentionController {
   }
 
   /** Confirm the due list: from now on the daily purge erases due records. */
-  @RequirePermission('student', 'erase')
+  @RequirePermission('student', 'erase', 'active')
   @RequireStepUp()
   @Post('confirm')
   @HttpCode(200)

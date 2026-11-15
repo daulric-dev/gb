@@ -2,11 +2,13 @@ import { Controller, Get, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AppVersionService } from './app-version.service';
+import { Public } from '@/auth/public.decorator';
 
 /**
  * Public: the mobile app asks it on launch and on returning to the
  * foreground, signed in or not. Only the default throttler applies.
  */
+@Public()
 @ApiTags('App')
 @Controller('app')
 export class AppVersionController {
