@@ -1,10 +1,17 @@
 /// The organisation that runs this install (one per deployment; it may run
-/// several schools). A unique index on a constant (`organisation_singleton`,
-/// in the migration) keeps it to one row. No row yet = first-run setup.
+/// several schools). No row yet = first-run setup. One row at most:
+/// OrganisationService.setup re-checks inside its transaction on every
+/// provider; on PostgreSQL the expression index `organisation_singleton`
+/// (a unique index on a constant, created by src/database-setup) also
+/// settles a race. Prisma cannot declare an expression index.
 model organisation {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name       String
   features   Json     @default("{}")
+  /// What pushes show (src/notifications/push-content.ts): 'full' or 'generic'; null = generic for notices about children, full for course news.
+  push_content String?
+  /// Require an authenticator app (src/mfa) for administrators and safeguarding holders.
+  require_mfa_for_admins Boolean @default(true)
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @db.Timestamptz(6)
   owner_id   String?       @db.Uuid
@@ -31,12 +38,15 @@ model organisation_admin {
 /// (school_admin, school_id set) or an organisation admin
 /// (organisation_admin, school_id null). The first sign-in that proves the
 /// email applies every open, unexpired invite for it (src/organisation/
-/// invite.service.ts). Open = accepted_at and revoked_at both null. The
-/// migration adds partial unique indexes Prisma cannot express: one open
-/// school_admin invite per school (organisation_invite_open_school_admin)
-/// and one open organisation_admin invite per email
-/// (organisation_invite_open_organisation_admin), plus CHECKs on kind, on
-/// school_id matching kind, and on the email being lower-cased.
+/// invite.service.ts). Open = accepted_at and revoked_at both null. One open
+/// school_admin invite per school (organisation_invite_open_school_admin),
+/// one open organisation_admin invite per email
+/// (organisation_invite_open_organisation_admin) and one open school_staff
+/// invite per school and email (organisation_invite_open_school_staff) are
+/// partial unique indexes below (PostgreSQL, SQLite, SQL Server and
+/// CockroachDB; InviteService also revokes the open one in the same
+/// transaction). The CHECKs on kind, on school_id matching kind, and on the
+/// email being lower-cased are added by the PostgreSQL hardening step.
 model organisation_invite {
   id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Lower-cased and trimmed, like account.app_user.email.
@@ -55,7 +65,10 @@ model organisation_invite {
   inviter     user_profile? @relation("organisation_invite_invited_byTouser_profile", fields: [invited_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   accepter    user_profile? @relation("organisation_invite_accepted_byTouser_profile", fields: [accepted_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
-  @@index([email], map: "organisation_invite_open_email_idx")
+  @@index([email], map: "organisation_invite_open_email_idx", where: raw("((accepted_at IS NULL) AND (revoked_at IS NULL))"))
+  @@unique([email], map: "organisation_invite_open_organisation_admin", where: raw("((kind = 'organisation_admin'::text) AND (accepted_at IS NULL) AND (revoked_at IS NULL))"))
+  @@unique([school_id], map: "organisation_invite_open_school_admin", where: raw("((kind = 'school_admin'::text) AND (accepted_at IS NULL) AND (revoked_at IS NULL))"))
+  @@unique([school_id, email], map: "organisation_invite_open_school_staff", where: raw("((kind = 'school_staff'::text) AND (accepted_at IS NULL) AND (revoked_at IS NULL))"))
   @@index([invited_by], map: "organisation_invite_invited_by_idx")
   @@index([accepted_by], map: "organisation_invite_accepted_by_idx")
   @@schema("public")

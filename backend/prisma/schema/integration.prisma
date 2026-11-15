@@ -2,8 +2,8 @@
 /// school chose (`/api/schools/current/webhooks`, or an organisation admin's
 /// `/api/organisation/schools/:schoolId/webhooks`). Any http(s) URL is
 /// allowed, internal addresses included: self-hosted schools call systems on
-/// their own network. `events` holds explicit event type keys from
-/// src/integrations/webhook-event-types.ts (never a wildcard). `secret_enc`
+/// their own network. `event_subscriptions` holds explicit event type keys
+/// from src/integrations/webhook-event-types.ts (never a wildcard). `secret_enc`
 /// is the signing secret, AES-256-GCM under a key derived from
 /// DATA_ENCRYPTION_KEY (`v2:`) or, for `v1:` values, AUTH_SECRET
 /// and bound to the school and webhook id (src/integrations/webhook-secret.ts);
@@ -16,7 +16,6 @@ model school_webhook {
   name                 String
   url                  String
   secret_enc           String
-  events               String[]           @default([])
   enabled              Boolean            @default(true)
   consecutive_failures Int                @default(0)
   disabled_reason      String?
@@ -35,21 +34,33 @@ model school_webhook {
   school               school             @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   webhook_delivery     webhook_delivery[]
   headers              school_webhook_header[]
+  event_subscriptions  school_webhook_event[]
 
   @@index([school_id, enabled], map: "school_webhook_school_enabled_idx")
+  @@schema("public")
+}
+
+/// One platform event type subscribed to by a webhook.
+model school_webhook_event {
+  webhook_id String         @db.Uuid
+  event_type String
+  webhook    school_webhook @relation(fields: [webhook_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "school_webhook_event_webhook_fkey")
+
+  @@id([webhook_id, event_type])
+  @@index([event_type, webhook_id], map: "school_webhook_event_type_idx")
   @@schema("public")
 }
 
 /// A custom header sent with every delivery of one webhook (up to 20 per
 /// webhook), for receivers that expect a key: `Authorization: Bearer ...`,
 /// `X-API-Key: ...`. `name` is an HTTP token (CHECK `^[A-Za-z0-9-]{1,100}$`;
-/// reserved names are refused by the API). The migration adds a unique index
-/// Prisma cannot express: one name per webhook ignoring case
-/// (school_webhook_header_name_key on `(webhook_id, lower(name))`).
+/// reserved names are refused by the API). One name per webhook ignoring
+/// case: planHeaders refuses duplicates, and on PostgreSQL the expression
+/// index school_webhook_header_name_key on `(webhook_id, lower(name))` backs
+/// it (created by src/database-setup; Prisma cannot declare it).
 /// `value_enc` is the value, AES-256-GCM under its own key derived from
 /// DATA_ENCRYPTION_KEY (`v2:`) or AUTH_SECRET (`v1:`), bound to the school, webhook and header id
 /// (src/integrations/webhooks/webhook-secret.ts); never returned or audited.
-/// Never drop that index when diffing: it lives in the migrations only.
 model school_webhook_header {
   id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   webhook_id String         @db.Uuid
@@ -98,9 +109,10 @@ model webhook_delivery {
 
 /// One change to a school's webhooks (created, changed, deleted, secret
 /// rotated, test sent, redelivered, auto-disabled), written in the same
-/// transaction as the change. `webhook_id` and `actor_id` have no foreign key:
-/// the entry outlives both. `changes` is `{ field: { before, after } }` plus
-/// context and never holds a secret.
+/// transaction as the change. School, webhook and actor ids have no foreign
+/// keys, so the entry survives deletion and is purged after the audit retention
+/// period. `changes` is `{ field: { before, after } }` plus context and never
+/// holds a secret.
 model integration_audit_log {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   school_id  String   @db.Uuid
@@ -113,7 +125,6 @@ model integration_audit_log {
   action     String
   changes    Json     @default("{}")
   created_at DateTime @default(now()) @db.Timestamptz(6)
-  school     school   @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([school_id, created_at(sort: Desc), id(sort: Desc)], map: "integration_audit_log_school_created_idx")
   @@schema("public")

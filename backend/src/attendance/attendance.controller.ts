@@ -15,6 +15,8 @@ import {
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { RequireStepUp } from '@/auth/step-up.guard';
 import { FeatureGuard } from '@/features/feature.guard';
 import { RequireFeature } from '@/features/require-feature.decorator';
 import { AttendanceService } from './attendance.service';
@@ -40,6 +42,7 @@ export class AttendanceController {
   constructor(
     private readonly attendance: AttendanceService,
     private readonly realtime: AttendanceRealtime,
+    private readonly audit: AuditLogService,
   ) {}
 
   @Get('sessions')
@@ -47,7 +50,10 @@ export class AttendanceController {
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    return this.attendance.list(req.user.id as string, courseId);
+    const userId = req.user.id as string;
+    const result = await this.attendance.list(userId, courseId);
+    await this.audit.recordRead(userId, { entity: 'attendance_sessions', courseId });
+    return result;
   }
 
   @Post('sessions')
@@ -65,7 +71,14 @@ export class AttendanceController {
     @Param('courseId', ParseUUIDPipe) courseId: string,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
   ) {
-    return this.attendance.detail(req.user.id as string, courseId, sessionId);
+    const userId = req.user.id as string;
+    const result = await this.attendance.detail(userId, courseId, sessionId);
+    await this.audit.recordRead(userId, {
+      entity: 'attendance_session',
+      entityId: sessionId,
+      courseId,
+    });
+    return result;
   }
 
   /** The QR frame the live screen shows now; it rotates every 15 s. */
@@ -166,11 +179,16 @@ export class AttendanceController {
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    return this.attendance.summary(req.user.id as string, courseId);
+    const userId = req.user.id as string;
+    const result = await this.attendance.summary(userId, courseId);
+    await this.audit.recordRead(userId, { entity: 'attendance_summary', courseId });
+    return result;
   }
 
+  /** Bulk export of personal data: step-up, and audited with its row count. */
   @Get('export')
   @ApiProduces('text/csv')
+  @RequireStepUp()
   async export(
     @Req() req: any,
     @Param('courseId', ParseUUIDPipe) courseId: string,
@@ -180,6 +198,12 @@ export class AttendanceController {
       req.user.id as string,
       courseId,
     );
+    await this.audit.recordExport(req.user.id as string, {
+      courseId,
+      entity: 'attendance',
+      scope: 'course',
+      csv,
+    });
 
     return res
       .header('Content-Type', 'text/csv; charset=utf-8')

@@ -58,7 +58,7 @@ Mobile needs nothing: with `EXPO_PUBLIC_API_URL` unset it derives the API host f
 bun run preload
 ```
 
-Starts four containers from `docker-compose.dev.yml` and waits for them to be healthy, then runs `bun run db:setup` (`prisma migrate deploy`), which applies every migration in `backend/prisma/migrations/` that the database has not seen. First run pulls images and takes a minute or two.
+Starts four containers from `docker-compose.dev.yml` and waits for them to be healthy, then runs `bun run db:setup` (`prisma db push` and `prisma generate` in `backend/`), which brings the database up to the Prisma schema. Run `bun run db:deploy` instead (also `db:prepare` and `db:harden`) to add what Prisma cannot declare (triggers, CHECK constraints, expression indexes) and run any one-off data steps, as a release does. First run pulls images and takes a minute or two.
 
 | Service | Address | What for |
 | --- | --- | --- |
@@ -69,7 +69,7 @@ Starts four containers from `docker-compose.dev.yml` and waits for them to be he
 
 Login is a one-time emailed code, so in development you read that code out of Mailpit at `http://127.0.0.1:8025`. Nothing is sent to a real address. `bun run db:studio` opens Prisma Studio, a database browser.
 
-Run `bun run db:setup` again whenever you pull new migrations.
+Run `bun run db:setup` again whenever you pull a schema change.
 
 ### 4. Run
 
@@ -143,10 +143,10 @@ Four independent targets. Nothing deploys the whole platform in one step, and th
 
 ### Database
 
-Schema changes are Prisma Migrate migrations in `backend/prisma/migrations/` (see `backend/prisma/schema/README.md`). The backend image applies pending ones when it starts (`prisma migrate deploy`, under an advisory lock, so replicas starting together are safe). To run them as a separate release step instead, set `MIGRATE_ON_START=false` and run:
+Schema changes are edits to the `.prisma` files, applied with `prisma db push`; there are no migration files (see `backend/prisma/schema/README.md` and `backend/prisma/DATABASE_PORTABILITY.md`). The backend image runs `bun run db:release` when it starts (prepare, `prisma db push`, harden, under a PostgreSQL advisory lock, so replicas starting together take turns). To run it as a separate release step instead, set `MIGRATE_ON_START=false` and run:
 
 ```bash
-DATABASE_URL=postgresql://... bun run db:deploy
+DATABASE_URL=postgresql://... bun run --cwd backend db:release
 # or, with the production Compose file:
 docker compose --profile release run --rm migrate
 ```
@@ -208,15 +208,16 @@ bun run test             # every workspace
 bun run preview          # production builds of API + web under PM2 (Ctrl+C stops)
 bun run lint             # typecheck everything
 
-bun run db:setup         # apply pending migrations (prisma migrate deploy)
-bun run db:migrate --name <change>  # create + apply a migration from .prisma edits
+bun run db:setup         # prisma db push + generate (backend db:push)
+bun run db:deploy        # db:prepare + db push + generate + hardening + setup steps
+bun run db:harden        # hardening + setup steps only (idempotent)
 bun run db:pull          # introspect the database into the .prisma files
 bun run db:studio        # Prisma Studio
 bun run seed:demo        # demo school (API running); --fresh to replace it
 bun run smoke            # end-to-end API check (API running)
 ```
 
-**The Prisma client is generated, not committed** (`backend/src/generated/prisma`). `bun install`, `bun test` and `build` regenerate it, and `db:migrate` does too; after pulling someone else's schema change, `bun run db:setup` applies it and `bun install` (or `bunx prisma generate` in `backend/`) refreshes the client.
+**The Prisma client is generated, not committed** (`backend/src/generated/prisma`). `bun install`, `bun test` and `build` regenerate it, and `db:setup` does too; after pulling someone else's schema change, `bun run db:setup` applies it and `bun install` (or `bunx prisma generate` in `backend/`) refreshes the client.
 
 ### Testing
 
@@ -229,7 +230,7 @@ bun run smoke            # end-to-end API check (API running)
 | | |
 | --- | --- |
 | `backend/prisma/schema/` | Prisma schema, one file per database schema. |
-| `backend/prisma/migrations/` | Migrations, in order (`0_baseline` is the whole schema). Never edit an applied migration; add another. |
+| `backend/src/database-setup/` | What `prisma db push` cannot create: provider hardening (PostgreSQL triggers, CHECKs, expression indexes), one-off setup steps, the legacy bridge for databases built by the old migrations. |
 | `backend/src/<module>/` | One folder per domain, NestJS convention. |
 | `frontend/app/` | Next.js App Router. `dashboard/` is staff, `portal/` is students. |
 | `mobile/app/` | Expo Router. `(auth)`, `(tabs)` staff, `(portal)` students. |

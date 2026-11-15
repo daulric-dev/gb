@@ -167,14 +167,21 @@ describe('needs marking', () => {
         graded_by: null,
         quiz_started_at: new Date(),
       });
-      p.$queryRaw
-        .mockResolvedValueOnce([
-          { attempt_count: 0, graded_by: null, quiz_started_at: new Date(), quiz_expires_at: FUTURE, expired: false },
-        ])
-        .mockResolvedValueOnce([{ score: new Prisma.Decimal(5), points: new Prisma.Decimal(10), attempts_used: 1 }]);
-      p.submission.findUnique.mockResolvedValue({ score: new Prisma.Decimal(5), status: 'submitted' });
+      p.submission.findUnique
+        .mockResolvedValueOnce({ id: 'sub-1', attempt_count: 0, graded_by: null, quiz_started_at: new Date(), quiz_expires_at: FUTURE })
+        .mockResolvedValueOnce({ id: 'sub-1', activity_id: 'act-1', attempt_count: 1, quiz_started_at: null, activity: { points: 10 } })
+        .mockResolvedValue({ score: 0, status: 'submitted' });
+      p.submission.updateMany.mockResolvedValue({ count: 1 });
+      p.quiz_question.findMany.mockResolvedValue([
+        { id: 'q-essay', kind: 'essay', points: 4, numeric_answer: null, numeric_tolerance: 0, partial_credit: false },
+      ]);
+      p.quiz_attempt_question.findMany.mockResolvedValue([]);
+      p.quiz_option.findMany.mockResolvedValue([]);
+      p.quiz_answer.findMany.mockResolvedValue([
+        { question_id: 'q-essay', option_id: null, option_ids: [], matches: null, text_answer: 'Answer', numeric_answer: null, file_id: null, manual_points: null },
+      ]);
     });
-    expect(await service.submitQuiz('stu-1', 'act-1', [])).toEqual({
+    expect(await service.submitQuiz('stu-1', 'act-1', [{ questionId: 'q-essay', text: 'Answer' }])).toEqual({
       score: null,
       points: 10,
       needsMarking: true,
@@ -188,9 +195,20 @@ describe('needs marking', () => {
         submission ?? { id: 'sub-1', status: 'submitted', quiz_started_at: null, graded_by: null },
       );
       p.quiz_question.findFirst.mockResolvedValue(question);
-      p.$queryRaw.mockResolvedValue([{ points: new Prisma.Decimal(10) }]);
+      p.submission.findMany.mockResolvedValue([{ id: 'sub-1' }]);
+      p.quiz_attempt_question.findMany.mockResolvedValue([]);
+      p.quiz_question.findMany.mockResolvedValue([
+        { id: 'q-essay', activity_id: 'act-1', kind: 'essay', points: 4, numeric_answer: null, numeric_tolerance: 0, partial_credit: false },
+      ]);
+      p.quiz_option.findMany.mockResolvedValue([]);
+      p.quiz_answer.findMany.mockResolvedValue([
+        { question_id: 'q-essay', option_id: null, option_ids: [], matches: null, text_answer: 'Answer', numeric_answer: null, file_id: null, manual_points: 3 },
+      ]);
       p.submission.findUnique.mockResolvedValue({
         id: 'sub-1',
+        activity_id: 'act-1',
+        attempt_count: 1,
+        activity: { points: 10 },
         student_id: 'stu-1',
         status: 'graded',
         score: new Prisma.Decimal(8),
@@ -214,8 +232,7 @@ describe('needs marking', () => {
       manual_feedback: 'Good',
       marked_by: 'ta-1',
     });
-    const sql = prisma.$executeRaw.mock.calls[0][0] as { values: unknown[] };
-    expect(sql.values).toEqual([10, 10, 'act-1', 'sub-1', 'sub-1']);
+    expect(prisma.submission.update).toHaveBeenCalled();
     expect(marked.status).toBe('graded');
     expect(marked.score).toBe(8);
   });

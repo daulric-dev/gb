@@ -106,7 +106,7 @@ export default function PortalCourseHomePage() {
             <Card className="transition-colors hover:bg-muted/40">
               <CardContent>
                 <p className="text-xs text-muted-foreground">Current grade</p>
-                <p className="text-3xl font-semibold">
+                <p className="text-3xl font-semibold" translate="no">
                   {formatPercent(course.grade.percent)}
                   {course.grade.letter && (
                     <span className="ml-2 text-lg text-muted-foreground">
@@ -144,7 +144,7 @@ export default function PortalCourseHomePage() {
                       <AvatarFallback className="text-xs">{initials}</AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{name}</p>
+                      <p className="truncate text-sm font-medium" translate="no">{name}</p>
                       <p className="text-xs text-muted-foreground">
                         {t.role === "ta" ? "Teaching assistant" : "Teacher"}
                       </p>

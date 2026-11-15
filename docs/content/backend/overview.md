@@ -85,7 +85,7 @@ The app bootstrap logic lives in `src/createApp.ts`; `src/main.ts` is its only c
 
 ## Deployment
 
-The supported deployment is the container built from `infrastructure/Dockerfile`. It builds the backend with `nest build`, and on start applies pending migrations (`prisma migrate deploy`, skipped when `MIGRATE_ON_START=false`) and then runs `bun dist/src/main`. There are no serverless entry points (Vercel or Cloudflare Workers). Build, run and configuration steps are in the [developer guide](../developer-guide.md) (Part 3, Backend).
+The supported deployment is the container built from `infrastructure/Dockerfile`. It builds the backend with `nest build`, and on start brings the database up to the schema (`bun run db:release`: prepare, `prisma db push`, harden; skipped when `MIGRATE_ON_START=false`) and then runs `bun dist/src/main`. There are no serverless entry points (Vercel or Cloudflare Workers). Build, run and configuration steps are in the [developer guide](../developer-guide.md) (Part 3, Backend).
 
 ## Root Module (`app.module.ts`)
 
@@ -133,7 +133,7 @@ AppModule
 
 ## Database Access
 
-The `PrismaModule` is marked `@Global()` and provides `PrismaService` (a Prisma 7 client over plain Postgres via `DATABASE_URL`) to all modules. The schema lives in `backend/prisma/schema/*.prisma`, with migrations under `backend/prisma/migrations/` (starting from `0_baseline`). There is no row-level security: every query runs with the same database role, and the API enforces who may read or write what.
+The `PrismaModule` is marked `@Global()` and provides `PrismaService` (a Prisma 7 client over plain Postgres via `DATABASE_URL`) to all modules. The schema lives in `backend/prisma/schema/*.prisma`, applied with `prisma db push` plus the setup layer in `backend/src/database-setup` (no migration files; see `backend/prisma/DATABASE_PORTABILITY.md`). There is no row-level security: every query runs with the same database role, and the API enforces who may read or write what.
 
 ## Database Schemas
 

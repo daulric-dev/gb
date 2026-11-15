@@ -51,9 +51,11 @@ Local services from `docker-compose.dev.yml`:
 | `bun run test`                                     | `bun test src` (Bun's runner; `prisma generate` runs first). `bun test src/<folder>` for one module. |
 | `bun run lint`                                     | ESLint over `src` with `--fix`.                                                                        |
 | `bunx tsc --noEmit`                                | Typecheck, including test files (neither `bun test` nor the build typechecks tests).                     |
-| `bun run db:deploy`                                | Apply pending migrations (`prisma migrate deploy`).                                                      |
+| `bun run db:deploy`                                | `db:prepare`, `prisma db push`, `prisma generate`, `db:harden` (development).                             |
+| `bun run db:prepare` / `db:harden`                 | Before / after push: provider hardening and one-off setup steps (`src/database-setup`). Idempotent.      |
+| `bun run db:release`                               | Production release step: prepare, push, harden under an advisory lock (the container runs it at start). |
 | `bun run db:generate`                              | Regenerate the Prisma client into `src/generated/prisma`.                                                |
-| `bun run db:pull` / `db:studio` / `db:migrate` | Introspect, browse, or `prisma migrate dev` (local only).                                                |
+| `bun run db:pull` / `db:studio`                | Introspect or browse the database.                                                                       |
 | `bun run seed:demo [--fresh]`                      | Create the demo school (and the organisation, if none) (API must run with `ALLOW_DEV_LOGIN=true`).        |
 | `bun run smoke`                                    | End-to-end API check against the demo school.                                                              |
 | `bun run student:check`                            | Student onboarding check: join code, link to roster record, portal; cleans up (see [scripts/README.md](./scripts/README.md)). |
@@ -78,16 +80,16 @@ A request goes through these layers (details in [src/README.md](./src/README.md#
 
 There is no row-level security in Postgres: the API connects as the schema owner, so guards and service code are the only access rules.
 
-Entry points: `src/main.ts` (the server; used by `start:dev`, `start:prod` and the container in `infrastructure/Dockerfile`, which runs `prisma migrate deploy` on start). The container is the supported deployment: it runs the built server with `bun dist/src/main`. What each infrastructure service (Postgres, Redis, S3, SMTP) is used for: [`infrastructure/SERVICES.md`](../infrastructure/SERVICES.md).
+Entry points: `src/main.ts` (the server; used by `start:dev`, `start:prod` and the container in `infrastructure/Dockerfile`, which runs `bun run db:release` on start). The container is the supported deployment: it runs the built server with `bun dist/src/main`. What each infrastructure service (Postgres, Redis, S3, SMTP) is used for: [`infrastructure/SERVICES.md`](../infrastructure/SERVICES.md).
 
 ## Folder index
 
 | Path                                                          | What it is                                                                                                            |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | [src/](./src/README.md)                                        | The application: root module, bootstrap, and one folder per module, each with its own README.                         |
-| [prisma/](./prisma/README.md)                                  | Prisma schema ([schema/](./prisma/schema/README.md)) and SQL migrations ([migrations/](./prisma/migrations/README.md)). |
-| [scripts/](./scripts/README.md)                                | `seed-demo`, `smoke`, `student-flow-check`, `retention-purge`, `erasure-replay`.                                 |
-| `prisma.config.ts`                                          | Prisma CLI config (schema and migrations paths, `DATABASE_URL`).                                                    |
+| [prisma/](./prisma/README.md)                                  | Prisma schema ([schema/](./prisma/schema/README.md)) and the database portability plan ([DATABASE_PORTABILITY.md](./prisma/DATABASE_PORTABILITY.md)). |
+| [scripts/](./scripts/README.md)                                | `seed-demo`, `smoke`, `student-flow-check`, `retention-purge`, `erasure-replay`, `db-prepare`, `db-harden`, `db-release`. |
+| `prisma.config.ts`                                          | Prisma CLI config (schema path, `DATABASE_URL`).                                                                    |
 | `nest-cli.json`, `tsconfig.json`, `tsconfig.build.json` | Nest build with the Swagger plugin; `@/*` path alias; tests excluded from the build.                                |
 | `eslint.config.mjs`                                         | Lint config.                                                                                                          |
 | `.env.example`                                              | Environment template.                                                                                                 |

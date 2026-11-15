@@ -150,7 +150,10 @@ const WEBHOOK_SELECT = {
   name: true,
   url: true,
   secret_enc: true,
-  events: true,
+  event_subscriptions: {
+    select: { event_type: true },
+    orderBy: { event_type: 'asc' },
+  },
   enabled: true,
   consecutive_failures: true,
   disabled_reason: true,
@@ -166,6 +169,10 @@ const WEBHOOK_SELECT = {
 } satisfies Prisma.school_webhookSelect;
 
 type WebhookRow = Prisma.school_webhookGetPayload<{ select: typeof WEBHOOK_SELECT }>;
+
+function eventTypes(row: WebhookRow): string[] {
+  return expandEvents(row.event_subscriptions.map(({ event_type }) => event_type));
+}
 
 const DELIVERY_SELECT = {
   id: true,
@@ -189,9 +196,10 @@ type DeliveryRow = Prisma.webhook_deliveryGetPayload<{ select: typeof DELIVERY_S
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * A webhook URL's syntax is checked here. Its resolved address is checked and
- * pinned at send time, with private destinations opt-in for trusted installs.
- * Returns the normalised URL.
+ * A webhook URL's syntax is checked here: https, or http only with
+ * WEBHOOK_ALLOW_PRIVATE=true. Its resolved address is checked and pinned at
+ * send time, with private destinations opt-in for trusted installs. Returns
+ * the normalised URL.
  */
 export function normaliseWebhookUrl(raw: string): string {
   const value = raw.trim();
@@ -207,6 +215,13 @@ export function normaliseWebhookUrl(raw: string): string {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new BadRequestException('The URL must start with https:// or http://');
+  }
+  // Payloads carry personal data (names, grades, attendance): plain http only
+  // where the install opted into private destinations (a trusted network).
+  if (url.protocol === 'http:' && process.env.WEBHOOK_ALLOW_PRIVATE !== 'true') {
+    throw new BadRequestException(
+      'The URL must start with https://. Plain http:// is only allowed when the server sets WEBHOOK_ALLOW_PRIVATE=true.',
+    );
   }
   if (!url.hostname) throw new BadRequestException('The URL needs a host name');
   url.hash = '';
@@ -318,7 +333,7 @@ export class WebhookService {
             name,
             url,
             secret_enc: secretEnc,
-            events,
+            event_subscriptions: { create: events.map((event_type) => ({ event_type })) },
             enabled,
             verify_tls: verifyTls,
             tls_ca_cert: ca?.pem ?? null,
@@ -411,9 +426,9 @@ export class WebhookService {
     }
     if (patch.events !== undefined) {
       const events = normaliseEvents(patch.events);
-      if (JSON.stringify(events) !== JSON.stringify(before.events)) {
-        data.events = events;
-        changes.events = { before: before.events, after: events };
+      const beforeEvents = eventTypes(before);
+      if (JSON.stringify(events) !== JSON.stringify(beforeEvents)) {
+        changes.events = { before: beforeEvents, after: events };
       }
     }
     // Validated before anything is written; values never reach the audit log.
@@ -477,6 +492,12 @@ export class WebhookService {
           where: { id },
           data: { ...data, updated_at: new Date() },
         });
+        if (patch.events !== undefined && changes.events) {
+          await tx.school_webhook_event.deleteMany({ where: { webhook_id: id } });
+          await tx.school_webhook_event.createMany({
+            data: normaliseEvents(patch.events).map((event_type) => ({ webhook_id: id, event_type })),
+          });
+        }
         if (headers) await this.writeHeaders(tx, schoolId, id, headers);
         await this.audit.record(tx, schoolId, actor, entries);
       });
@@ -499,7 +520,7 @@ export class WebhookService {
             action: 'webhook_deleted',
             webhookId: id,
             webhook: before.name,
-            changes: { url: before.url, events: before.events },
+            changes: { url: before.url, events: eventTypes(before) },
           },
         ]);
       });
@@ -786,7 +807,7 @@ export class WebhookService {
       name: r.name,
       url: r.url,
       insecure: r.url.toLowerCase().startsWith('http:'),
-      events: r.events,
+      events: eventTypes(r),
       enabled: r.enabled,
       disabledReason: r.disabled_reason,
       consecutiveFailures: r.consecutive_failures,

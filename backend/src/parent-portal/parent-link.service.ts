@@ -20,7 +20,8 @@ import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import { userSchoolId } from '@/common/user-school';
 import { primaryOrigin } from '@/config/origins';
 import { isOrgAdmin } from '@/organisation/org-admin';
-import { userPermCachePrefix } from '@/permission/permission.effective';
+import { loadEffectivePermissions, userPermCachePrefix } from '@/permission/permission.effective';
+import { canSeeSensitive, scopedStudentWhere, studentScope } from '@/permission/student-access';
 import { parentInviteEmail } from './parent-emails';
 import { excludedByAge, parseParentSettings } from './parent-settings';
 import {
@@ -111,13 +112,21 @@ export class ParentLinkService {
 
   // ── staff ────────────────────────────────────────────────────────────────
 
-  /** The student in the caller's active school, or 404. */
+  /**
+   * The student in the caller's active school and within their student scope
+   * (permission/student-access.ts: every student with student:read-all,
+   * otherwise their courses' and tutor group's), or 404.
+   */
   private async studentInSchool(userId: string, studentId: string) {
     const schoolId = await userSchoolId(this.prisma, userId);
     if (!schoolId) throw new ForbiddenException('You are not assigned to a school');
+    const effective = await loadEffectivePermissions(this.prisma, this.cache, userId, schoolId);
     const student = await this.prisma.student
       .findFirst({
-        where: { id: studentId, school_id: schoolId },
+        where: scopedStudentWhere(studentScope(effective, userId, schoolId), {
+          id: studentId,
+          school_id: schoolId,
+        }),
         select: {
           id: true,
           first_name: true,
@@ -127,11 +136,15 @@ export class ParentLinkService {
       })
       .catch(() => null);
     if (!student) throw new NotFoundException('Student not found');
-    return { student, schoolId };
+    return { student, schoolId, sensitive: canSeeSensitive(effective) };
   }
 
+  /**
+   * The student's parents and open invitations. Parent and invitation email
+   * addresses are guardian contacts: null without student:sensitive.
+   */
   async listForStudent(userId: string, studentId: string) {
-    await this.studentInSchool(userId, studentId);
+    const { sensitive } = await this.studentInSchool(userId, studentId);
     const now = new Date();
     const [links, invites] = await Promise.all([
       this.prisma.parent_student_link.findMany({
@@ -168,7 +181,7 @@ export class ParentLinkService {
           id: l.user_profile.id,
           firstName: l.user_profile.first_name,
           lastName: l.user_profile.last_name,
-          email: l.user_profile.email,
+          email: sensitive ? l.user_profile.email : null,
         },
         relationship: l.relationship,
         relationshipLabel: l.relationship_label,
@@ -177,7 +190,7 @@ export class ParentLinkService {
       invites: invites.map((i) => ({
         id: i.id,
         kind: i.kind as 'email' | 'code',
-        email: i.email,
+        email: sensitive ? i.email : null,
         relationship: i.relationship,
         relationshipLabel: i.relationship_label,
         expiresAt: i.expires_at.toISOString(),

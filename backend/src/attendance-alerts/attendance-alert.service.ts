@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { FeatureService } from '@/features/feature.service';
+import { allowedRecipients } from '@/notifications/notification-preferences';
 import { MailService } from '@/mail/mail.service';
 import { primaryOrigin } from '@/config/origins';
 import { accountEmailHtml } from '@/account/templates/layout';
@@ -424,7 +425,13 @@ export class AttendanceAlertService {
     }
 
     const url = `${primaryOrigin()}/dashboard/attendance`;
+    // Staff who turned attendance emails off in their notification settings
+    // get none (the alerts stay in the app).
+    const allowed = new Set(
+      await allowedRecipients(this.prisma, [...byRecipient.keys()], 'attendance', 'email'),
+    );
     for (const [userId, lines] of byRecipient) {
+      if (!allowed.has(userId)) continue;
       const to = emailOf.get(userId);
       if (!to) continue;
       await this.mail

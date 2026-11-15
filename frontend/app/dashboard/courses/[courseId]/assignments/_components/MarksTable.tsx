@@ -346,7 +346,7 @@ export function MarksTable({
                   )}
                 >
                   <TableCell className="align-top">
-                    <p className="font-medium">{row.name}</p>
+                    <p className="font-medium" translate="no">{row.name}</p>
                     {online && <ExtensionBadge extension={row.extension} />}
                     {kind === "quiz" && (
                       <AccommodationBadge accommodation={row.accommodation} />
@@ -358,6 +358,7 @@ export function MarksTable({
                           type="button"
                           className="rounded-sm text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                           aria-label={`${similarityLabel(similarity[row.studentId])}. Compare ${row.name}'s text`}
+                          data-private-label
                           onClick={() =>
                             (similarFor.value = {
                               submissionId: similarity[row.studentId].submissionId,
@@ -385,11 +386,11 @@ export function MarksTable({
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-500">
                         <SlashIcon className="size-3" />
                         Excused
-                        {sub?.excusedReason ? ` - ${sub.excusedReason}` : ""}
+                        {sub?.excusedReason ? <span translate="no">{` - ${sub.excusedReason}`}</span> : ""}
                       </p>
                     )}
                     {sub?.feedback && (
-                      <p className="mt-0.5 line-clamp-1 max-w-xs text-xs text-muted-foreground">
+                      <p className="mt-0.5 line-clamp-1 max-w-xs text-xs text-muted-foreground" translate="no">
                         &ldquo;{sub.feedback}&rdquo;
                       </p>
                     )}
@@ -419,7 +420,7 @@ export function MarksTable({
                                       −{sub.latePenaltyPercent}% late penalty (waived)
                                     </span>
                                   ) : (
-                                    <span className="text-amber-700 dark:text-amber-400">
+                                    <span className="text-amber-700 dark:text-amber-400" translate="no">
                                       {sub?.rawScore !== null && sub?.rawScore !== undefined ? `${sub.rawScore} − ` : ""}
                                       {sub?.latePenaltyPercent}% late = {sub?.score}
                                     </span>
@@ -438,7 +439,7 @@ export function MarksTable({
                             </div>
                           )}
                           {sub!.textBody && (
-                            <p className="line-clamp-2 whitespace-pre-wrap text-sm">
+                            <p className="line-clamp-2 whitespace-pre-wrap text-sm" translate="no">
                               {sub!.textBody}
                             </p>
                           )}
@@ -460,6 +461,7 @@ export function MarksTable({
                                   size="sm"
                                   variant="outline"
                                   aria-label={`View ${file.name}`}
+                                  data-private-label
                                   onClick={() =>
                                     (fileFor.value = {
                                       row,
@@ -470,7 +472,7 @@ export function MarksTable({
                                   }
                                 >
                                   <Eye className="mr-1.5 size-3.5" />
-                                  <span className="max-w-32 truncate">
+                                  <span className="max-w-32 truncate" translate="no">
                                     {file.name}
                                   </span>
                                 </Button>
@@ -502,7 +504,7 @@ export function MarksTable({
                   <TableCell className="align-top">
                     {sub?.fileId ? (
                       <div className="flex items-center gap-2">
-                        <span className={cn(excused && "line-through opacity-60")}>
+                        <span className={cn(excused && "line-through opacity-60")} translate="no">
                           {sub.score ?? "—"}/{points}
                         </span>
                         {editable && (
@@ -511,6 +513,7 @@ export function MarksTable({
                             size="sm"
                             variant="outline"
                             aria-label={`${sub.score === null ? "Enter" : "Edit"} grade for ${row.name}`}
+                            data-private-label
                             onClick={() => {
                               const file = sub.files?.[0];
                               if (file) {
@@ -542,6 +545,7 @@ export function MarksTable({
                           min={0}
                           step={0.01}
                           aria-label={`Score for ${row.name}`}
+                          data-private-label
                           defaultValue={sub?.score ?? ""}
                           disabled={
                             !editable || savingId.value === row.studentId
@@ -610,6 +614,7 @@ export function MarksTable({
                             variant="ghost"
                             title="Answers and question marks"
                             aria-label={`Answers and question marks for ${row.name}`}
+                            data-private-label
                             onClick={() => (answersFor.value = row)}
                           >
                             <ListChecks className="size-4" aria-hidden />
@@ -719,7 +724,7 @@ export function MarksTable({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Feedback for {feedbackFor.value?.name}</DialogTitle>
+            <DialogTitle translate="no">Feedback for {feedbackFor.value?.name}</DialogTitle>
             <DialogDescription>
               The student sees this with their mark.
             </DialogDescription>

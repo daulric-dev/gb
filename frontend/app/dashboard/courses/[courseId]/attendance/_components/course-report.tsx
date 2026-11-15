@@ -21,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TimeZoneNotice } from "@/components/timetable/time-zone-notice";
 import { CsvButton, RangePicker, Rate, TallyLine } from "@/app/dashboard/attendance/_components/report-ui";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 /**
  * The course's attendance over a date range (GET /courses/:id/attendance-report),
@@ -101,7 +102,7 @@ export function CourseAttendanceReport({ courseId, fileBase }: { courseId: strin
                       <TableRow key={s.studentId}>
                         <TableCell className="font-medium">
                           <span className="flex flex-wrap items-center gap-2">
-                            {personName(s)}
+                            <NoTranslate>{personName(s)}</NoTranslate>
                             {s.openAlerts.map((k) => (
                               <Badge key={k} variant="destructive">
                                 {ALERT_KIND_LABEL[k as keyof typeof ALERT_KIND_LABEL] ?? k}

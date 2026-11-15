@@ -44,7 +44,7 @@ export function WorkList({ items, empty }: { items: ParentWorkItem[]; empty: str
             </p>
           </div>
           {w.score !== null && (
-            <span className="text-sm tabular-nums">
+            <span className="text-sm tabular-nums" translate="no">
               {w.score} / {w.points}
             </span>
           )}

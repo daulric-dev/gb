@@ -184,8 +184,8 @@ describe('OrganisationService', () => {
         createdAt: NOW.toISOString(),
         ownerId: ME,
       });
-      // Under the advisory lock, inside the transaction.
-      expect(prisma.$executeRaw).toHaveBeenCalled();
+      // No session lock: the singleton index settles a race (see below).
+      expect(prisma.$executeRaw).not.toHaveBeenCalled();
       // Whoever runs setup owns the organisation.
       expect(prisma.organisation.create.mock.calls[0][0].data).toEqual({
         name: 'Riverside Trust',
@@ -272,7 +272,7 @@ describe('OrganisationService', () => {
       expect(prisma.school_management.count).not.toHaveBeenCalled();
     });
 
-    test('race: a setup that committed first makes the second a 409 (re-check under the lock)', async () => {
+    test('race: a setup that committed first makes the second a 409 (re-check in the transaction)', async () => {
       prisma.organisation.count
         .mockResolvedValueOnce(0)
         .mockResolvedValueOnce(1);

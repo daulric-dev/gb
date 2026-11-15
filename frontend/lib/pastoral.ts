@@ -44,6 +44,10 @@ export interface PastoralNote {
   files: { id: string; name: string; contentType: string; sizeBytes: number }[];
   canEdit: boolean;
   canDelete: boolean;
+  /** Withheld from subject access exports (data downloads) under an exemption. */
+  sarWithheld?: boolean;
+  sarWithheldReason?: string | null;
+  sarWithheldAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -180,4 +184,23 @@ export function noteRequest(
     if (f.assignedTo) body.assignedTo = f.assignedTo;
   }
   return { ok: true, body };
+}
+
+/**
+ * Whether the caller may withhold a note from data requests (or release it):
+ * they may change the note, and hold `pastoral-note:safeguarding` or
+ * `student:export` (backend PastoralService.setSarWithheld).
+ */
+export function canWithholdNote(
+  note: Pick<PastoralNote, "canEdit">,
+  can: (resource: string, action: string) => boolean,
+): boolean {
+  return note.canEdit && (can("pastoral-note", "safeguarding") || can("student", "export"));
+}
+
+/** PATCH /pastoral/notes/:id/sar-withheld body; the reason is required to withhold. */
+export function sarWithheldRequest(withheld: boolean, reason: string): { withheld: boolean; reason?: string } | null {
+  if (!withheld) return { withheld: false };
+  const r = reason.trim();
+  return r ? { withheld: true, reason: r } : null;
 }

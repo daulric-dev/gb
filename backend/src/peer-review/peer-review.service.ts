@@ -22,6 +22,7 @@ import { FileManagerService } from '@/file-manager/file-manager.service';
 import { SubmissionEvents } from '@/grading/submission-events';
 import { loadRubric } from '@/grading/rubric.service';
 import { isUniqueViolation } from '@/common/db-values';
+import { acquireJobLease, releaseJobLease } from '@/common/job-lease';
 import { toTimestamp, ts } from '@/grading/activity.mapper';
 import { roundScore } from '@/grading/round';
 import {
@@ -671,7 +672,7 @@ export class PeerReviewService implements OnModuleInit {
 
   /**
    * Allocate (first run: the ring; later: late joiners only) under a
-   * per-activity advisory lock, stamp started_at, and tell new reviewers.
+   * per-activity database lease, stamp started_at, and tell new reviewers.
    * Returns the reviewers given new work.
    */
   async allocateNow(
@@ -680,36 +681,52 @@ export class PeerReviewService implements OnModuleInit {
     now: Date,
   ): Promise<string[]> {
     const submitters = await this.submitters(activity);
-    const added = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`peer-review:${activity.id}`}))`;
-      const existing = await tx.peer_review_allocation.findMany({
-        where: { activity_id: activity.id },
-        select: { reviewer_id: true, submission_id: true },
-      });
-      const fresh = allocate(
-        submitters,
-        existing.map((e) => ({ reviewerId: e.reviewer_id, submissionId: e.submission_id })),
-        setting.reviews_per_student,
-        setting.seed,
-      );
-      if (fresh.length > 0) {
-        await tx.peer_review_allocation.createMany({
-          data: fresh.map((a) => ({
-            activity_id: activity.id,
-            submission_id: a.submissionId,
-            reviewer_id: a.reviewerId,
-          })),
-          skipDuplicates: true,
-        });
-      }
-      if (!setting.started_at) {
-        await tx.peer_review_setting.update({
+    // The lease is taken outside the transaction: a failed insert (the lease
+    // row already exists) would abort a Postgres transaction, so the reclaim
+    // that follows it could never run inside one.
+    const key = `peer-review:activity:${activity.id}`;
+    const ownerToken = await acquireJobLease(this.prisma, key, 60_000);
+    if (!ownerToken) throw new ConflictException('Peer review allocation is busy');
+    let added: ReturnType<typeof allocate>;
+    try {
+      added = await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.peer_review_allocation.findMany({
           where: { activity_id: activity.id },
-          data: { started_at: now, updated_at: now },
+          select: { reviewer_id: true, submission_id: true },
         });
-      }
-      return fresh;
-    });
+        const fresh = allocate(
+          submitters,
+          existing.map((e) => ({ reviewerId: e.reviewer_id, submissionId: e.submission_id })),
+          setting.reviews_per_student,
+          setting.seed,
+        );
+        // The service-level form of the trigger peer_review_allocation_not_self
+        // (which stays as a backstop): the whole allocation fails, as the
+        // trigger would fail the insert.
+        if (fresh.some((a) => a.reviewerId === a.authorId)) {
+          throw new Error('A student cannot review their own submission');
+        }
+        if (fresh.length > 0) {
+          await tx.peer_review_allocation.createMany({
+            data: fresh.map((a) => ({
+              activity_id: activity.id,
+              submission_id: a.submissionId,
+              reviewer_id: a.reviewerId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+        if (!setting.started_at) {
+          await tx.peer_review_setting.update({
+            where: { activity_id: activity.id },
+            data: { started_at: now, updated_at: now },
+          });
+        }
+        return fresh;
+      });
+    } finally {
+      await releaseJobLease(this.prisma, key, ownerToken);
+    }
     const reviewers = [...new Set(added.map((a) => a.reviewerId))];
     if (reviewers.length > 0) {
       void this.notifications?.peerReviewAssigned(activity.course_id, activity, reviewers);

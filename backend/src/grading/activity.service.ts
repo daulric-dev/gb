@@ -41,6 +41,7 @@ import {
   type QuestionInput,
   type QuestionPatch,
 } from './question-write';
+import { stringList } from './quiz-questions';
 
 /** The text of an activity copy, replacing the source's in the same order (see `sourceForCopy`). */
 export interface ActivityCopyText {
@@ -379,7 +380,7 @@ export class ActivityService {
         numeric_tolerance: q.numeric_tolerance,
         partial_credit: q.partial_credit,
         rubric_id: q.rubric_id,
-        file_types: q.file_types,
+        file_types: stringList(q.file_types),
         file_max_mb: q.file_max_mb,
       });
       q.quiz_option.forEach((o, oi) => {
@@ -700,10 +701,10 @@ export class ActivityService {
    * (SubmissionService.grade), so no mark can be written against the old
    * points between the check here and the commit.
    *
-   * submit_quiz stores a quiz's automatic score already scaled to the points,
+   * The shared quiz scorer stores an automatic score already scaled to the points,
    * so those scores are rescaled by new/old to stay the same fraction. From 0
    * points there is no fraction to keep (every automatic score is 0), so
-   * they are scored again from their stored answers instead, by submit_quiz's
+   * they are scored again from their stored answers instead, by the same
    * rules (rescoreQuizFromAnswers). A mark a teacher entered or imported
    * (graded_by set) is theirs and is left as it is, which is why it must
    * still fit under the new points.
@@ -743,15 +744,13 @@ export class ActivityService {
     }
 
     if (rescale) {
-      await tx.$executeRaw`
-        update grading.submission
-        set score = score * ${points}::numeric / ${old}::numeric,
-            raw_score = raw_score * ${points}::numeric / ${old}::numeric,
-            updated_at = now()
-        where activity_id = ${activityId}::uuid
-          and graded_by is null
-          and score is not null
-      `;
+      await tx.submission.updateMany({
+        where: { activity_id: activityId, graded_by: null, score: { not: null } },
+        data: {
+          score: { multiply: points / old },
+          raw_score: { multiply: points / old },
+        },
+      });
     } else if (autoScored) {
       await rescoreQuizFromAnswers(tx, activityId, points);
     }
@@ -924,7 +923,7 @@ export class ActivityService {
    * The quiz a question belongs to, checked to be the caller's and still a
    * draft.
    *
-   * Questions stop being editable at publish: submit_quiz scores an answer
+   * Questions stop being editable at publish: the shared scorer scores an answer
    * against the option the student picked, so changing prompts, points or the
    * answer key afterwards would silently rescore work already handed in.
    */

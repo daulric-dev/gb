@@ -107,7 +107,9 @@ export function useOptionalCan(): (resource: string, action: string) => boolean 
 function canWith(data: MyPermissions | null) {
   return (resource: string, action: string): boolean => {
     if (!data) return false;
-    if (data.isAdmin) return true;
-    return data.permissions.includes(`${resource}:${action}`);
+    const key = `${resource}:${action}`;
+    // Safeguarding is never implied by being an admin (API: EXPLICIT_ONLY_KEYS).
+    if (data.isAdmin && key !== "pastoral-note:safeguarding") return true;
+    return data.permissions.includes(key);
   };
 }

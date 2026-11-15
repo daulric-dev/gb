@@ -1,13 +1,14 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AttendanceAlertService } from './attendance-alert.service';
+import { withJobLease } from '@/common/job-lease';
 
 const TICK_MS = 60 * 60 * 1000;
 const FIRST_TICK_MS = 5 * 60 * 1000;
 
 /**
  * Runs the attendance alert sweep every hour in every API instance; a
- * Postgres advisory lock lets one instance sweep at a time (as the parent
+ * `job_lease` claim lets one instance sweep at a time (as the parent
  * notice and retention sweeps do), so it works without Redis. Nothing runs
  * under NODE_ENV=test or with ATTENDANCE_ALERTS_SWEEP=false.
  */
@@ -39,16 +40,10 @@ export class AttendanceAlertScheduler implements OnModuleInit, OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-            SELECT pg_try_advisory_xact_lock(hashtext(${'gradebook:attendance-alerts'})) AS locked`;
-          if (!rows?.[0]?.locked) return;
-          const opened = await this.alerts.sweep(now);
-          if (opened > 0) this.logger.log(`Opened ${opened} attendance alerts`);
-        },
-        { maxWait: 10_000, timeout: 10 * 60_000 },
-      );
+      await withJobLease(this.prisma, 'gradebook:attendance-alerts', 10 * 60_000, async () => {
+        const opened = await this.alerts.sweep(now);
+        if (opened > 0) this.logger.log(`Opened ${opened} attendance alerts`);
+      });
     } catch (err) {
       this.logger.error(`Attendance alert sweep failed: ${(err as Error).message}`);
     } finally {

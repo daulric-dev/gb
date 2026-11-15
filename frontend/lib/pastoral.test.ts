@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emptyNoteForm, followUpState, noteRequest, notesQuery } from "./pastoral";
+import { canWithholdNote, emptyNoteForm, followUpState, noteRequest, notesQuery, sarWithheldRequest } from "./pastoral";
 
 describe("pastoral helpers", () => {
   test("follow-ups are overdue, today or upcoming only while open", () => {
@@ -35,5 +35,21 @@ describe("pastoral helpers", () => {
       ok: false,
       error: "The follow-up date is before the note's date",
     });
+  });
+});
+
+describe("withholding notes from data requests", () => {
+  test("needs the note to be changeable and safeguarding or student export", () => {
+    const yes = (k: string) => (r: string, a: string) => `${r}:${a}` === k;
+    expect(canWithholdNote({ canEdit: true }, yes("pastoral-note:safeguarding"))).toBe(true);
+    expect(canWithholdNote({ canEdit: true }, yes("student:export"))).toBe(true);
+    expect(canWithholdNote({ canEdit: true }, yes("student:read"))).toBe(false);
+    expect(canWithholdNote({ canEdit: false }, yes("student:export"))).toBe(false);
+  });
+
+  test("a reason is required to withhold, not to release", () => {
+    expect(sarWithheldRequest(true, "  ")).toBeNull();
+    expect(sarWithheldRequest(true, " Third-party data ")).toEqual({ withheld: true, reason: "Third-party data" });
+    expect(sarWithheldRequest(false, "")).toEqual({ withheld: false });
   });
 });

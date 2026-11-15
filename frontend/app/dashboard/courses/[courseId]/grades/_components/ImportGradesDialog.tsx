@@ -194,12 +194,12 @@ export function ImportGradesDialog({
                   <tbody>
                     {p.changes.map((c) => (
                       <tr key={`${c.studentId}-${c.activityId}`} className="border-t">
-                        <td className="px-3 py-1.5">{c.studentName}</td>
+                        <td className="px-3 py-1.5" translate="no">{c.studentName}</td>
                         <td className="px-3 py-1.5">{c.activityTitle}</td>
-                        <td className="px-3 py-1.5 text-right text-muted-foreground tabular-nums">
+                        <td className="px-3 py-1.5 text-right text-muted-foreground tabular-nums" translate="no">
                           {markText(c.from)}
                         </td>
-                        <td className="px-3 py-1.5 text-right font-medium tabular-nums">
+                        <td className="px-3 py-1.5 text-right font-medium tabular-nums" translate="no">
                           {markText(c.to)}
                         </td>
                       </tr>

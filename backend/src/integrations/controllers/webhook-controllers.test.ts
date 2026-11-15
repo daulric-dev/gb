@@ -86,7 +86,7 @@ describe('who may use them', () => {
   test('integrations off for the school: FeatureGuard answers 403 FEATURE_DISABLED', async () => {
     const prisma = createMockPrisma();
     prisma.organisation.findFirst.mockResolvedValue({ features: {} }); // default: off
-    prisma.school.findUnique.mockResolvedValue({ disabled_features: [] });
+    prisma.school.findUnique.mockResolvedValue({ disabled_feature_rows: [] });
     const guard = new FeatureGuard(new Reflector(), new FeatureService(prisma as any, createMockCacheService() as any), prisma as any);
     const ctx = {
       switchToHttp: () => ({ getRequest: () => ({ user: { id: 'u-1' }, params: { schoolId: SCHOOL } }) }),

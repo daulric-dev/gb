@@ -204,7 +204,7 @@ export function RubricMarkDialog({
     <Dialog open={open} onOpenChange={onOpenChangeAction}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Mark {student?.name}</DialogTitle>
+          <DialogTitle translate="no">Mark {student?.name}</DialogTitle>
           <DialogDescription>
             {rubric.title}. Pick a level for each criterion; the total becomes
             the mark unless you enter a score.
@@ -292,7 +292,7 @@ export function RubricMarkDialog({
                         <span className="font-medium">
                           AI suggests: {level ? `${level.label} (${level.points})` : "no level"}
                         </span>
-                        {s.comment && <span className="block text-muted-foreground">{s.comment}</span>}
+                        {s.comment && <span className="block text-muted-foreground" translate="no">{s.comment}</span>}
                       </p>
                       <Button
                         type="button"
@@ -327,7 +327,7 @@ export function RubricMarkDialog({
                 <div className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-2 text-xs dark:border-amber-800 dark:bg-amber-950/20">
                   <p className="min-w-0 flex-1 whitespace-pre-wrap">
                     <span className="font-medium">AI suggests: </span>
-                    {ai.value.feedback}
+                    <span translate="no">{ai.value.feedback}</span>
                   </p>
                   <Button
                     type="button"

@@ -7,7 +7,7 @@ const QUEUE_BACKSTOP_MS = 60_000;
 
 /**
  * Sends due webhook deliveries from the database, in every API instance.
- * Claims are atomic (FOR UPDATE SKIP LOCKED plus a lease), so instances never
+ * Claims are atomic (a compare-and-set update plus a lease), so instances never
  * send the same delivery twice at once and a crashed one's work comes back.
  *
  * Without Redis this is the delivery mechanism: every WEBHOOK_POLL_INTERVAL_MS

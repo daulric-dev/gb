@@ -11,6 +11,7 @@ import { randomInt } from 'node:crypto';
 import { WebhookEvents } from '@/integrations/events';
 import { CacheService } from '@/cache/cache.service';
 import { loadEffectivePermissions } from '@/permission/permission.effective';
+import { scopedStudentWhere, studentScope } from '@/permission/student-access';
 import {
   COURSE_SELECT,
   CourseAccessService,
@@ -471,6 +472,14 @@ export class CourseService {
           where: { id: courseId },
           select: COURSE_SELECT,
         });
+        // Rostering links naming the course or its enrolments (they hold
+        // the roster record) go with it; target_id has no foreign key.
+        const enrolments = await tx.course_student.findMany({
+          where: { course_id: courseId },
+          select: { id: true },
+        });
+        const rosterTargets = [courseId, ...(enrolments ?? []).map((e) => e.id)];
+        await tx.roster_link.deleteMany({ where: { target_id: { in: rosterTargets } } });
         const { count } = await tx.course.deleteMany({
           where: { id: courseId },
         });
@@ -508,6 +517,7 @@ export class CourseService {
           actor: userId,
           reason: 'admin',
           replay: plan.of(
+            plan.del('public.roster_link', { target_id: rosterTargets }),
             plan.del('course.course', { id: [courseId] }),
             plan.prefixes([courseBannerPrefix(courseId)]),
           ),
@@ -548,6 +558,11 @@ export class CourseService {
     for (let attempt = 0; attempt < 5; attempt++) {
       const joinCode = this.generateJoinCode();
       try {
+        // Codes are generated upper-case, so equality is the case-insensitive
+        // check on every provider; on PostgreSQL the expression index
+        // course_join_code_key (src/database-setup) also settles a race.
+        const taken = await this.prisma.course.count({ where: { join_code: joinCode } });
+        if (taken > 0) continue;
         await this.prisma.course.updateMany({
           where: { id: courseId },
           data: { join_code: joinCode, updated_at: new Date() },
@@ -814,7 +829,13 @@ export class CourseService {
     }
   }
 
-  /** Enrol students from the school roster; re-enrolling revives a drop. */
+  /**
+   * Enrol students from the school roster; re-enrolling revives a drop.
+   * Unless the caller holds student:read-all or course:update in the school,
+   * the students must already be in their student scope (their courses and
+   * tutor group, permission/student-access.ts): enrolling is not a way to
+   * reach students they cannot otherwise see.
+   */
   async enrollStudents(userId: string, courseId: string, studentIds: string[]) {
     const { course } = await this.access.require(
       userId,
@@ -826,15 +847,18 @@ export class CourseService {
     }
     const unique = [...new Set(studentIds)];
 
+    const effective = await loadEffectivePermissions(this.prisma, this.cache, userId, course.school_id);
+    const schoolWide = effective.keys.includes('student:read-all') || effective.keys.includes('course:update');
+    const base: Prisma.studentWhereInput = { school_id: course.school_id, id: { in: unique } };
     const records = await this.prisma.student.findMany({
-      where: { school_id: course.school_id, id: { in: unique } },
+      where: schoolWide ? base : scopedStudentWhere(studentScope(effective, userId, course.school_id), base),
       select: { id: true },
     });
 
     const valid = records.map((r) => r.id);
     if (valid.length !== unique.length) {
       throw new NotFoundException(
-        'One or more students are not in this school',
+        'One or more students are not in this school or not among your students',
       );
     }
 

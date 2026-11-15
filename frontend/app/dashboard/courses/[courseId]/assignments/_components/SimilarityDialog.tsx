@@ -91,7 +91,7 @@ export function SimilarityDialog({
   const c = comparison.value;
   return (
     <Dialog open onOpenChange={(o) => !o && onCloseAction()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl" translate="no">
         <DialogHeader>
           <DialogTitle>Similar text: {studentName}</DialogTitle>
           <DialogDescription className="flex items-start gap-1.5">

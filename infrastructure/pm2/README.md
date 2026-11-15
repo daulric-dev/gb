@@ -66,7 +66,7 @@ then, after `kill_timeout` (API 15s, web 10s), `SIGKILL`.
 
 | File | Used by | Contents |
 | --- | --- | --- |
-| `backend/.env` | API (Bun loads it from `backend/`) and `prisma migrate deploy` | Production values: `DATABASE_URL`, `AUTH_SECRET` (32+ chars), `API_URL` (https), `FRONTEND_URL` (https, not localhost), `USE_REDIS=true` and `REDIS_URL`, `S3_*`, SMTP, ... Template: `backend/.env.example`; reference: [`docs/content/environment-variables.md`](../../docs/content/environment-variables.md). |
+| `backend/.env` | API (Bun loads it from `backend/`) and `bun run db:release` | Production values: `DATABASE_URL`, `AUTH_SECRET` (32+ chars), `DATA_ENCRYPTION_KEY` (32+ chars, `openssl rand -base64 32`), `API_URL` (https), `FRONTEND_URL` (https, not localhost), `USE_REDIS=true` and `REDIS_URL`, `S3_*`, SMTP, ... Template: `backend/.env.example`; reference: [`docs/content/environment-variables.md`](../../docs/content/environment-variables.md). |
 | `frontend/.env.production` | `next build` (and `next start`) | `NEXT_PUBLIC_API_URL=https://api.example.com` and `NEXT_PUBLIC_STORAGE_URL=https://<bucket endpoint>`. Inlined into the browser bundle **at build time**: change them, then redeploy. |
 
 Notes:
@@ -97,7 +97,7 @@ infrastructure/pm2/deploy.sh
 `deploy.sh` checks Bun, Node >= 20.9, PM2, `backend/.env` and
 `NEXT_PUBLIC_API_URL`, then runs `bun install --frozen-lockfile`, builds the
 backend (`prisma generate && nest build`) and the frontend (`next build`),
-runs `bunx prisma migrate deploy` (skip with `SKIP_MIGRATE=1`), and
+runs `bun run db:release` in `backend/` (prepare, `prisma db push`, harden; skip with `SKIP_MIGRATE=1`), and
 `pm2 startOrReload infrastructure/pm2/ecosystem.config.cjs --update-env` plus
 `pm2 save`.
 

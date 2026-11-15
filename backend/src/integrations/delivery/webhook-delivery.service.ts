@@ -54,8 +54,8 @@ const WEBHOOK_SELECT = {
 /**
  * Sends webhook deliveries and keeps their retry state. The database is the
  * queue: a delivery row is `pending` with a `next_attempt_at`, and whoever
- * claims it (an atomic UPDATE ... FOR UPDATE SKIP LOCKED that pushes
- * `next_attempt_at` out by a lease) sends it. The poller (WebhookWorker) and,
+ * claims it (a compare-and-set update that pushes `next_attempt_at` out
+ * by a lease) sends it. The poller (WebhookWorker) and,
  * with Redis, a BullMQ job per delivery both end up in `processDue` /
  * `processOne`; a delivery is only ever sent by the one that claimed it.
  *
@@ -108,30 +108,31 @@ export class WebhookDeliveryService {
   /**
    * Claim up to `limit` due deliveries (or just `onlyId`, when it is due):
    * pushes their `next_attempt_at` out by the lease, so another worker skips
-   * them and a crashed worker's are retried once it lapses.
+   * them and a crashed worker's are retried once it lapses. Each claim is a
+   * compare-and-set (`updateMany` still requiring the row to be pending and
+   * due): when two workers read the same candidates, the database lets only
+   * one update win and the other gets a count of 0 and skips that row.
    */
   async claim(limit = CLAIM_BATCH, onlyId?: string): Promise<string[]> {
-    const lease = new Date(Date.now() + CLAIM_LEASE_MS);
-    const rows = onlyId
-      ? await this.prisma.$queryRaw<{ id: string }[]>`
-          UPDATE public.webhook_delivery SET next_attempt_at = ${lease}
-          WHERE id IN (
-            SELECT id FROM public.webhook_delivery
-            WHERE id = ${onlyId}::uuid AND status = 'pending' AND next_attempt_at <= now()
-            FOR UPDATE SKIP LOCKED
-          )
-          RETURNING id`
-      : await this.prisma.$queryRaw<{ id: string }[]>`
-          UPDATE public.webhook_delivery SET next_attempt_at = ${lease}
-          WHERE id IN (
-            SELECT id FROM public.webhook_delivery
-            WHERE status = 'pending' AND next_attempt_at <= now()
-            ORDER BY next_attempt_at
-            LIMIT ${limit}
-            FOR UPDATE SKIP LOCKED
-          )
-          RETURNING id`;
-    return rows.map((r) => r.id);
+    const now = new Date();
+    const lease = new Date(now.getTime() + CLAIM_LEASE_MS);
+    const due = { status: 'pending' as const, next_attempt_at: { lte: now } };
+    const candidates = await this.prisma.webhook_delivery.findMany({
+      where: onlyId ? { id: onlyId, ...due } : due,
+      orderBy: [{ next_attempt_at: 'asc' }, { id: 'asc' }],
+      take: onlyId ? 1 : limit,
+      select: { id: true },
+    });
+    const claimed = await Promise.all(
+      candidates.map(async ({ id }) => {
+        const { count } = await this.prisma.webhook_delivery.updateMany({
+          where: { id, ...due },
+          data: { next_attempt_at: lease },
+        });
+        return count === 1 ? id : null;
+      }),
+    );
+    return claimed.filter((id): id is string => id !== null);
   }
 
   /** One round of the poller: claim what is due and send it. Returns how many. */
@@ -179,6 +180,18 @@ export class WebhookDeliveryService {
     const result = await this.send(hook, delivery, envelope);
     const attempts = delivery.attempts + 1;
     const now = new Date();
+
+    if (result.refused === 'plain_http') {
+      // Nothing was sent and a retry cannot help: the delivery fails with
+      // the reason, and the webhook is switched off (once) with the school
+      // told, like a webhook that keeps failing.
+      await this.prisma.webhook_delivery.update({
+        where: { id: deliveryId },
+        data: { ...outcome(result), ...stored, attempts, status: 'failed', next_attempt_at: null },
+      });
+      await this.switchOff(hook, 'Switched off: its URL uses plain http, which is refused. Change it to https://', 'plain_http');
+      return result;
+    }
 
     if (result.ok) {
       await this.prisma.$transaction([
@@ -329,6 +342,38 @@ export class WebhookDeliveryService {
       error: redactValues(result.error, values),
       responseExcerpt: redactValues(result.responseExcerpt, values),
     };
+  }
+
+  /**
+   * Switch a webhook off for a reason that is not a count of failures (a
+   * plain-http URL): once - only the update that flips `enabled` audits and
+   * alerts the school's admins and the organisation admins.
+   */
+  private async switchOff(hook: { id: string; school_id: string; name: string }, reason: string, why: 'plain_http') {
+    try {
+      const flipped = await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.school_webhook.updateMany({
+          where: { id: hook.id, enabled: true },
+          data: { enabled: false, disabled_reason: reason, updated_at: new Date() },
+        });
+        if (count === 0) return false;
+        await this.audit.record(tx, hook.school_id, SYSTEM_ACTOR, [
+          {
+            action: 'webhook_auto_disabled',
+            webhookId: hook.id,
+            webhook: hook.name,
+            changes: { enabled: { before: true, after: false }, reason: why },
+          },
+        ]);
+        return true;
+      });
+      if (flipped) {
+        this.logger.warn(`Webhook ${hook.id} of school ${hook.school_id} switched off: ${reason}`);
+        void this.alerts.plainHttpRefused(hook.school_id, { id: hook.id, name: hook.name }).catch(() => undefined);
+      }
+    } catch (err) {
+      this.logger.error(`Failed to switch off webhook ${hook.id}: ${(err as Error).message}`);
+    }
   }
 
   /**

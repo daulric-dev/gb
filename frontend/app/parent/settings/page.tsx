@@ -20,8 +20,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useParentChildren } from "../_components/parent-context";
+import { DataExportCard } from "@/components/data-export/data-export-card";
 
-/** Linked children, adding another, and notice preferences. */
+/**
+ * Linked children, adding another, notice preferences, and downloading data:
+ * the parent's own account and, per linked child, what the school shows
+ * parents about them.
+ */
 export default function ParentSettingsPage() {
   useSignals();
   const { children } = useParentChildren();
@@ -70,8 +75,8 @@ export default function ParentSettingsPage() {
             <ul className="divide-y">
               {children.map((c) => (
                 <li key={c.id} className="py-2">
-                  <p className="text-sm font-medium">{personName(c, "Child")}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm font-medium" translate="no">{personName(c, "Child")}</p>
+                  <p className="text-xs text-muted-foreground" translate="no">
                     {[c.school.name, relationshipText(c.relationship, c.relationshipLabel)]
                       .filter(Boolean)
                       .join(" · ")}
@@ -133,6 +138,17 @@ export default function ParentSettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      <DataExportCard kind="self" />
+
+      {children.map((c) => (
+        <DataExportCard
+          key={c.id}
+          kind="child"
+          studentId={c.id}
+          subjectName={personName(c, "your child")}
+        />
+      ))}
     </div>
   );
 }

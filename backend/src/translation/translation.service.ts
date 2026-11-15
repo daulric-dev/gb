@@ -29,8 +29,9 @@ import {
   callEngine,
   type EngineConfig,
 } from './translation-engine';
-import { TranslationSettingsService } from './translation-settings.service';
+import { TranslationSettingsService, type StoredTranslationSettings } from './translation-settings.service';
 import type { TranslateTextsDto } from './translation.dto';
+import { UNCONTRACTED_ENGINE_MESSAGE, engineAllowed, engineDisplayName } from './engine-policy';
 
 // ── pure helpers (exported for tests) ────────────────────────────────────
 
@@ -268,6 +269,7 @@ export class TranslationService {
     if (!(await this.features.isEnabled(schoolId, 'translation'))) return null;
     const stored = await this.settings.stored();
     if (!stored?.enabled) return null;
+    if (!this.allowed(stored)) return null;
     if (stored.keyUnreadable) {
       throw new ConflictException({
         statusCode: 409,
@@ -285,11 +287,35 @@ export class TranslationService {
     return cfg;
   }
 
-  async status(userId: string): Promise<{ enabled: boolean }> {
+  /**
+   * `GET /translation/status`: `enabled`, and the engine's display name for
+   * the "Translate GradeBook into …?" question (null while off).
+   */
+  async status(userId: string): Promise<{ enabled: boolean; engine: string | null }> {
     const schoolId = await this.features.schoolOfUser(userId);
-    if (!(await this.features.isEnabled(schoolId, 'translation'))) return { enabled: false };
+    if (!(await this.features.isEnabled(schoolId, 'translation'))) return { enabled: false, engine: null };
     const stored = await this.settings.stored();
-    return { enabled: !!stored?.enabled && !stored.keyUnreadable };
+    if (!stored?.enabled || stored.keyUnreadable || !this.allowed(stored)) return { enabled: false, engine: null };
+    return { enabled: true, engine: engineDisplayName(stored.engine, stored.url, stored.allowPrivateNetwork) };
+  }
+
+  private warnedBlocked = false;
+
+  /**
+   * Google and Yandex only with TRANSLATION_ALLOW_UNCONTRACTED_ENGINES=true;
+   * a saved one is treated as off otherwise (warned once per process; the
+   * organisation console says why).
+   */
+  private allowed(stored: StoredTranslationSettings): boolean {
+    if (engineAllowed(stored.engine)) return true;
+    if (!this.warnedBlocked) {
+      this.warnedBlocked = true;
+      this.logger.warn(
+        `Translation is off: the saved engine (${stored.engine}) has no data processing agreement and ` +
+          'TRANSLATION_ALLOW_UNCONTRACTED_ENGINES is not true. Choose LibreTranslate or DeepL in the organisation console.',
+      );
+    }
+    return false;
   }
 
   async translateForUser(userId: string, dto: TranslateTextsDto): Promise<{ translations: string[] }> {
@@ -337,6 +363,7 @@ export class TranslationService {
   async test(): Promise<{ ok: boolean; sample?: string; message?: string }> {
     const stored = await this.settings.stored();
     if (!stored) return { ok: false, message: 'Save the translation settings first.' };
+    if (!engineAllowed(stored.engine)) return { ok: false, message: UNCONTRACTED_ENGINE_MESSAGE };
     if (stored.keyUnreadable) {
       return { ok: false, message: 'The stored API key cannot be read (the server key changed). Enter it again.' };
     }

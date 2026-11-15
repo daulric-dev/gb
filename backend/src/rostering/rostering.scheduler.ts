@@ -3,10 +3,11 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { FeatureService } from '@/features/feature.service';
 import { RosterRunService } from './roster-run.service';
 import { ROSTER_DAILY_MS, ROSTER_LOCK, ROSTER_TICK_MS } from './rostering.constants';
+import { withJobLease } from '@/common/job-lease';
 
 /**
  * Every ROSTER_TICK_MS (and once on boot), in one instance at a time (a
- * Postgres advisory lock): resumes applies a restart interrupted, fails dry
+ * `job_lease` claim): resumes applies a restart interrupted, fails dry
  * runs that never finished, and starts the daily dry run of each source with
  * `schedule = 'daily'` (which auto-applies creates and updates only when the
  * source has auto-apply on; disables always wait for an admin). Nothing runs
@@ -42,17 +43,11 @@ export class RosteringScheduler implements OnApplicationBootstrap, OnModuleDestr
     if (this.running) return;
     this.running = true;
     try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-            SELECT pg_try_advisory_xact_lock(hashtext(${ROSTER_LOCK})) AS locked`;
-          if (!rows?.[0]?.locked) return;
-          if (!(await this.features.isEnabled(null, 'rostering'))) return;
-          await this.runs.resumeStale(now);
-          await this.startDaily(now);
-        },
-        { maxWait: 10_000, timeout: 60_000 },
-      );
+      await withJobLease(this.prisma, ROSTER_LOCK, 60_000, async () => {
+        if (!(await this.features.isEnabled(null, 'rostering'))) return;
+        await this.runs.resumeStale(now);
+        await this.startDaily(now);
+      });
     } catch (err) {
       this.logger.error(`Rostering sweep failed: ${(err as Error).message}`);
     } finally {

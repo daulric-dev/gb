@@ -2,8 +2,10 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { ScanClaimController } from './scan-claim.controller';
 import {
   SCAN_DEVICE_COOKIE,
+  SCAN_DEVICE_MAX_AGE_S,
   newScanDeviceId,
   scanDeviceIdFrom,
+  setScanDeviceCookie,
 } from './scan-device';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
@@ -91,5 +93,15 @@ describe('scan-device cookie', () => {
       scanDeviceIdFrom({ cookies: { [SCAN_DEVICE_COOKIE]: 'a'.repeat(22) + ';x' } }),
     ).toBeUndefined();
     expect(scanDeviceIdFrom({})).toBeUndefined();
+  });
+});
+
+describe('scan device cookie lifetime', () => {
+  test('is 90 days, not a year', () => {
+    const set: any[] = [];
+    setScanDeviceCookie({ setCookie: (...a: any[]) => set.push(a) } as any, newScanDeviceId());
+    expect(SCAN_DEVICE_MAX_AGE_S).toBe(90 * 24 * 60 * 60);
+    expect(set[0][2].maxAge).toBe(90 * 24 * 60 * 60);
+    expect(set[0][0]).toBe(SCAN_DEVICE_COOKIE);
   });
 });

@@ -330,14 +330,37 @@ describe('RosterApplyService', () => {
   });
 
   test('disables deactivate and archive, never delete records', async () => {
-    prisma.student.findUnique.mockResolvedValue({ user_profile_id: null, school_id: SCHOOL });
+    prisma.student.findUnique.mockResolvedValue({ user_profile_id: null, school_id: SCHOOL, is_active: true, left_at: null });
     await service.apply({ id: 'd1', entity: 'student', action: 'disable', sourced_id: 'u1', target_id: 'st-1', school_id: SCHOOL, label: 'x', diff: {}, data: {} }, ctx);
-    expect(prisma.student.update.mock.calls[0][0].data).toEqual({ is_active: false });
+    // Disabling is leaving: the retention clock (left_at) starts now.
+    expect(prisma.student.update.mock.calls[0][0].data).toEqual({ is_active: false, left_at: expect.any(Date) });
     expect(prisma.student.delete).not.toHaveBeenCalled();
     prisma.course.findUnique.mockResolvedValue({ status: 'published' });
     await service.apply({ id: 'd2', entity: 'course', action: 'disable', sourced_id: 'c1', target_id: 'co-1', school_id: SCHOOL, label: 'x', diff: {}, data: {} }, ctx);
     expect(prisma.course.update.mock.calls[0][0].data.status).toBe('archived');
     expect(prisma.course.delete).not.toHaveBeenCalled();
+  });
+
+  test('a re-disabled student keeps their first left_at; a reactivated one loses it', async () => {
+    const leftAt = new Date('2026-02-01T00:00:00Z');
+    prisma.student.findUnique.mockResolvedValue({ user_profile_id: null, school_id: SCHOOL, is_active: false, left_at: leftAt });
+    await service.apply({ id: 'd1', entity: 'student', action: 'disable', sourced_id: 'u1', target_id: 'st-1', school_id: SCHOOL, label: 'x', diff: {}, data: {} }, ctx);
+    expect(prisma.student.update.mock.calls[0][0].data).toEqual({ is_active: false, left_at: leftAt });
+
+    prisma.student.findFirst.mockResolvedValue({ id: 'st-1', user_profile_id: null, is_active: false, left_at: leftAt });
+    await service.apply(
+      { id: 'c9', entity: 'student', action: 'update', sourced_id: 'u1', target_id: 'st-1', school_id: SCHOOL, label: 'x', diff: { isActive: { from: false, to: true } }, data: { schoolId: SCHOOL } },
+      ctx,
+    );
+    expect(prisma.student.update.mock.calls[1][0].data).toEqual({ is_active: true, left_at: null });
+  });
+
+  test('a rostered student is created active, without a leaving date', async () => {
+    await service.apply(
+      { id: 'c8', entity: 'student', action: 'create', sourced_id: 'u8', target_id: null, school_id: SCHOOL, label: 'x', diff: {}, data: { schoolId: SCHOOL, firstName: 'A' } },
+      ctx,
+    );
+    expect(prisma.student.create.mock.calls[0][0].data).toMatchObject({ is_active: true, left_at: null });
   });
 
   test('the last teacher of a course is kept', async () => {

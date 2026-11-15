@@ -4,7 +4,9 @@ import { useEffect, useSyncExternalStore } from "react";
 import { signal, type ReadonlySignal } from "@preact/signals-react";
 import { useProfile } from "@/providers/AuthProvider";
 import {
+  clearTranslationCache,
   DEFAULT_LANGUAGE,
+  languageToOffer,
   readStoredLanguage,
   storeLanguage,
   translationApi,
@@ -44,20 +46,45 @@ export function useCurrentLanguage(): LanguageCode {
 }
 
 export function chooseLanguage(code: LanguageCode): void {
+  // A choice from the menu answers the one-time question too.
+  offeredLanguage.value = null;
   currentLanguage.value = code;
   storeLanguage(code);
 }
+
+/**
+ * The device language to offer once ("Translate GradeBook into …?"), or
+ * null: set after hydration only when nothing is stored in this browser.
+ */
+export const offeredLanguage = signal<LanguageCode | null>(null);
 
 /** Reads the stored choice once (after hydration, so the server render stays English). */
 export function useStoredLanguage(): void {
   useEffect(() => {
     if (languageLoaded) return;
     languageLoaded = true;
+    // English unless a choice was stored: the device language is only offered.
     currentLanguage.value = readStoredLanguage();
+    offeredLanguage.value = languageToOffer();
   }, []);
 }
 
-const status = signal<{ key: string; enabled: boolean } | null>(null);
+/** The answer to the one-time prompt: the language, or "en" for "No thanks". Stored either way. */
+export function answerLanguageOffer(code: LanguageCode): void {
+  chooseLanguage(code);
+}
+
+/**
+ * Sign-out: forget cached translations (memory and sessionStorage) and the
+ * translation status. The language choice stays (a browser preference).
+ */
+export function clearTranslationSession(): void {
+  clearTranslationCache();
+  status.value = null;
+  pendingKey = null;
+}
+
+const status = signal<{ key: string; enabled: boolean; engine: string | null } | null>(null);
 let pendingKey: string | null = null;
 
 /** Turn translation off for this session (the API said the feature is off). */
@@ -86,10 +113,14 @@ export function useTranslationEnabled(): boolean {
     translationApi
       .status()
       .then((s) => {
-        status.value = { key, enabled: !!s?.enabled };
+        status.value = {
+          key,
+          enabled: !!s?.enabled,
+          engine: typeof s?.engine === "string" && s.engine ? s.engine : null,
+        };
       })
       .catch(() => {
-        status.value = { key, enabled: false };
+        status.value = { key, enabled: false, engine: null };
       })
       .finally(() => {
         if (pendingKey === key) pendingKey = null;
@@ -98,4 +129,13 @@ export function useTranslationEnabled(): boolean {
 
   const s = useGlobalSignal(status);
   return !!key && !featureOff && s?.key === key && s.enabled;
+}
+
+/**
+ * The translation service's display name for the consent prompt ("DeepL",
+ * "LibreTranslate (your school's server)"); null while unknown. Call after
+ * `useTranslationEnabled` (which fetches the status).
+ */
+export function useTranslationEngineName(): string | null {
+  return useGlobalSignal(status)?.engine ?? null;
 }

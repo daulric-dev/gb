@@ -28,11 +28,10 @@ import type {
 } from './dto/organisation.dto';
 import { InviteService, type InviteSummary } from './invite.service';
 import { seatSchoolAdmin } from './school-admin';
+import { seedSchoolSystemRoles } from '@/permission/system-roles';
 import { optionalImageUrl } from '@/images/public-url';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
-
-/** Serialises first-run setups (with the singleton index as the backstop). */
-const SETUP_LOCK = 'gradebook:organisation-setup';
+import { textSearch } from '@/common/text-search';
 
 export const SETUP_REFUSED =
   'Only a school administrator on this server, or an email listed in ' +
@@ -214,7 +213,8 @@ export class OrganisationService implements OnApplicationBootstrap {
     let org: { id: string; name: string; created_at: Date };
     try {
       org = await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${SETUP_LOCK}))`;
+        // Re-checked in the transaction; two setups racing past it are
+        // settled by the organisation_singleton unique index (P2002 below).
         if ((await tx.organisation.count()) > 0) {
           throw new ConflictException('GradeBook is already set up');
         }
@@ -546,8 +546,8 @@ export class OrganisationService implements OnApplicationBootstrap {
     if (needle) {
       and.push({
         OR: [
-          { name: { contains: needle, mode: 'insensitive' } },
-          { code: { contains: needle, mode: 'insensitive' } },
+          { name: textSearch.contains(needle) },
+          { code: textSearch.contains(needle) },
         ],
       });
     }
@@ -578,7 +578,7 @@ export class OrganisationService implements OnApplicationBootstrap {
   }
 
   /**
-   * Create a school. The trigger on public.school seeds its system roles.
+   * Create a school with its system roles (admin, teacher, member).
    * The organisation admin does not become a member. With `adminEmail`, that
    * account becomes the school's admin, or is invited when it has none yet.
    */
@@ -604,6 +604,7 @@ export class OrganisationService implements OnApplicationBootstrap {
             is_active: true,
           },
         });
+        await seedSchoolSystemRoles(tx, created.id);
         await this.auditLog?.record(
           tx,
           created.id,

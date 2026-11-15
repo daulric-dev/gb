@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminDashboard } from "./_components/AdminDashboard";
 import { TeacherDashboard } from "./_components/TeacherDashboard";
 import type { DashboardSummary } from "./_components/types";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 type DashboardMode = "admin-only" | "teacher-only" | "both";
 
@@ -64,7 +65,7 @@ export default function DashboardPage() {
         {profileLoading.value ? (
           <Skeleton className="h-9 w-48" />
         ) : (
-          <h1 className="text-3xl font-bold">Hello {displayName}</h1>
+          <h1 className="text-3xl font-bold">Hello <NoTranslate>{displayName}</NoTranslate></h1>
         )}
       </div>
 

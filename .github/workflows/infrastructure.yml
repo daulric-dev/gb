@@ -94,9 +94,9 @@ jobs:
           bun run --cwd backend build
           bun run --cwd frontend build
 
-      - name: Applying migrations
+      - name: Creating the database schema
         working-directory: backend
-        run: bunx prisma migrate deploy
+        run: bun run db:release
 
       - name: Generating test secrets
         run: |
@@ -107,6 +107,8 @@ jobs:
             echo "PM2_LOG_DIR=${RUNNER_TEMP}/pm2-logs"
             echo "AUTH_SECRET=$(openssl rand -hex 32)"
             echo "CHAT_ENCRYPTION_KEY=$(openssl rand -base64 32)"
+            # Required in production (stored secrets, pastoral notes, MFA).
+            echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)"
             echo "STUDENT_CLAIM_CODE_PEPPER=$(openssl rand -hex 32)"
           } >> "$GITHUB_ENV"
 

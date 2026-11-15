@@ -3,10 +3,8 @@
  * answer is checked and stored, how it is scored, and how one attempt's
  * questions are drawn and shuffled.
  *
- * Scoring here (`questionCredit`) mirrors the CASE in grading.submit_quiz
- * (and its TypeScript re-scoring copy in quiz-rescore.ts) for the teacher's
- * per-question view and for tests; the database function is what writes
- * marks. Keep the three in step.
+ * Scoring here (`questionCredit`) is shared by submit, expiry, rescore and
+ * teacher per-question views, so the same rules write and display marks.
  */
 
 import { BadRequestException } from '@nestjs/common';
@@ -42,6 +40,10 @@ const FILE_TYPE = /^(\.[a-z0-9]{1,10}|[a-z]+\/([a-z0-9.+-]+|\*))$/i;
 
 export function isManualKind(kind: string): boolean {
   return (MANUAL_KINDS as readonly string[]).includes(kind);
+}
+
+export function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
 // ── teacher input ───────────────────────────────────────────────────────────
@@ -204,7 +206,7 @@ export function fileTypeAllowed(
   });
 }
 
-// ── scoring (mirror of submit_quiz) ─────────────────────────────────────────
+// ── shared scoring ──────────────────────────────────────────────────────────
 
 export type ScoringQuestion = {
   kind: string;
@@ -386,7 +388,7 @@ export type StudentQuestionSource = {
   prompt: string;
   kind: string;
   points: unknown;
-  file_types?: string[] | null;
+  file_types?: unknown;
   file_max_mb?: number | null;
 };
 
@@ -428,7 +430,7 @@ export function toStudentQuestion(
   if (kind === 'file_upload') {
     return {
       ...base,
-      fileTypes: q.file_types ?? [],
+      fileTypes: stringList(q.file_types),
       fileMaxMb: q.file_max_mb ?? null,
     };
   }
@@ -532,11 +534,12 @@ export function toSavedAnswer(row: {
   question_id: string;
   option_id: string | null;
   text_answer: string | null;
-  option_ids?: string[] | null;
+  option_ids?: unknown;
   matches?: unknown;
   numeric_answer?: unknown;
   file_id?: string | null;
 }) {
+  const optionIds = stringList(row.option_ids);
   const matches =
     row.matches && typeof row.matches === 'object'
       ? Object.entries(row.matches as Record<string, string>).map(([optionId, label]) => ({
@@ -548,7 +551,7 @@ export function toSavedAnswer(row: {
     questionId: row.question_id,
     optionId: row.option_id,
     text: row.text_answer,
-    optionIds: row.option_ids?.length ? row.option_ids : null,
+    optionIds: optionIds.length ? optionIds : null,
     matches,
     numeric:
       row.numeric_answer === null || row.numeric_answer === undefined

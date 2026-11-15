@@ -6,7 +6,9 @@ import { isUniqueViolation } from '@/common/db-values';
 import { RETIRED_KEY_GRACE_MS } from './lti.constants';
 import { signJwt, type JwtPayload } from './jwt';
 
-const KEY_INFO = 'gradebook:lti-platform-key:v1';
+/** secret-box purpose for the platform's private signing keys; the kid is the AAD. */
+export const LTI_PLATFORM_KEY_INFO = 'gradebook:lti-platform-key:v1';
+const KEY_INFO = LTI_PLATFORM_KEY_INFO;
 
 export interface PlatformKeySummary {
   kid: string;

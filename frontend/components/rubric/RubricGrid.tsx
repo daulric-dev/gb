@@ -71,12 +71,12 @@ export function RubricGrid({
                     ))}
                   </div>
                   {mark?.comment && (
-                    <p className="mt-1.5 text-xs italic text-muted-foreground">
+                    <p className="mt-1.5 text-xs italic text-muted-foreground" translate="no">
                       &ldquo;{mark.comment}&rdquo;
                     </p>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums">
+                <td className="px-3 py-2 text-right tabular-nums" translate="no">
                   {mark ? (
                     <>
                       <span className="font-medium">{mark.points}</span>
@@ -95,7 +95,7 @@ export function RubricGrid({
             <td className="px-3 py-2" colSpan={2}>
               Total
             </td>
-            <td className="px-3 py-2 text-right tabular-nums">
+            <td className="px-3 py-2 text-right tabular-nums" translate="no">
               {total !== null ? `${total}/` : ""}
               {rubric.pointsPossible}
             </td>

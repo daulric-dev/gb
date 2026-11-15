@@ -18,6 +18,7 @@ import {
 import { AiService, aiHttpError } from './ai.service';
 import { AiProviderError } from './adapters/types';
 import { plainText, redact, safeMarkdown, suppliedUrls } from './redact';
+import { coursePeople } from './course-people';
 import {
   ANNOUNCEMENT_SCHEMA,
   ANNOUNCEMENT_SYSTEM,
@@ -103,7 +104,8 @@ export interface PlanModuleResult {
 /**
  * The AI course builder: drafts a course outline, module items, page
  * content, assignment instructions, rubrics, announcements and outcomes from
- * teacher material only (no student data is read or sent), and creates a
+ * teacher material only (no student data is sent; the names of the course's
+ * students, staff and guardians are read only to strip them), and creates a
  * plan the teacher reviewed through the existing services. Drafting writes
  * nothing but the AI request log; only `createFromPlan` creates anything,
  * and everything it creates starts unpublished.
@@ -133,12 +135,22 @@ export class AiCourseService {
     return course;
   }
 
-  /** Course name, code and description: teacher-written context, emails and numbers removed. */
-  private context(course: CourseRow): string {
+  /**
+   * `redact()` with the names of the course's students, staff and the
+   * students' guardians (full names only: this is teacher material, see
+   * course-people.ts), for everything a draft sends.
+   */
+  private async scrubber(courseId: string): Promise<(text: string) => string> {
+    const others = await coursePeople(this.prisma, courseId, { fullNamesOnly: true });
+    return (text: string) => redact(text, { others });
+  }
+
+  /** Course name, code and description: teacher-written context, emails, numbers and people's names removed. */
+  private context(course: CourseRow, scrub: (text: string) => string): string {
     return [
-      `Course: ${redact(course.name)}`,
-      course.code ? `Course code: ${redact(course.code)}` : '',
-      course.description?.trim() ? `Course description: ${redact(clip(course.description.trim(), 2000))}` : '',
+      `Course: ${scrub(course.name)}`,
+      course.code ? `Course code: ${scrub(course.code)}` : '',
+      course.description?.trim() ? `Course description: ${scrub(clip(course.description.trim(), 2000))}` : '',
     ]
       .filter(Boolean)
       .join('\n');
@@ -177,6 +189,7 @@ export class AiCourseService {
 
   async outline(userId: string, courseId: string, dto: OutlineDraftDto) {
     const course = await this.course(userId, courseId);
+    const scrub = await this.scrubber(courseId);
     const [mastery, groups, startDate] = await Promise.all([
       this.masteryOn(course.school_id),
       this.groupNames(courseId),
@@ -190,20 +203,20 @@ export class AiCourseService {
         ? `${dto.weeks} weeks (about one module per week; fewer modules if a unit spans weeks)`
         : 'choose a sensible number of units';
     const user = [
-      this.context(course),
-      `Subject: ${redact(dto.subject)}`,
-      `Level: ${redact(dto.level)}`,
+      this.context(course, scrub),
+      `Subject: ${scrub(dto.subject)}`,
+      `Level: ${scrub(dto.level)}`,
       `Length: ${length}`,
       dto.assessments !== undefined ? `About ${dto.assessments} assessments (quizzes and assignments) in total.` : '',
       `Assessment mix: ${MIX_TEXT[dto.mix ?? 'balanced']}.`,
       dto.groups === false
         ? 'Assignment groups: none (group is always "").'
         : groups.length
-          ? `Assignment groups already in the course (reuse these names where they fit): ${groups.map((g) => redact(g)).join(', ')}`
+          ? `Assignment groups already in the course (reuse these names where they fit): ${groups.map((g) => scrub(g)).join(', ')}`
           : 'Assignment groups: suggest a few short names.',
       withOutcomes ? 'Learning outcomes: yes, per module.' : 'Learning outcomes: no (outcomes are empty lists).',
-      dto.goals?.trim() ? `\n<goals>\n${redact(dto.goals.trim())}\n</goals>` : '',
-      dto.syllabus?.trim() ? `\n<syllabus>\n${redact(dto.syllabus.trim())}\n</syllabus>` : '',
+      dto.goals?.trim() ? `\n<goals>\n${scrub(dto.goals.trim())}\n</goals>` : '',
+      dto.syllabus?.trim() ? `\n<syllabus>\n${scrub(dto.syllabus.trim())}\n</syllabus>` : '',
     ]
       .filter(Boolean)
       .join('\n');
@@ -228,6 +241,7 @@ export class AiCourseService {
 
   async moduleItems(userId: string, courseId: string, moduleId: string, dto: ModuleItemsDraftDto) {
     const course = await this.course(userId, courseId);
+    const scrub = await this.scrubber(courseId);
     const all = await this.modules.list(userId, courseId);
     const mod = all.find((m) => m.id === moduleId);
     if (!mod) throw new NotFoundException('Module not found');
@@ -235,14 +249,14 @@ export class AiCourseService {
     const provider = await this.ai.requireProvider(course.school_id);
     const count = dto.count ?? 5;
     const user = [
-      this.context(course),
-      dto.level?.trim() ? `Level: ${redact(dto.level)}` : '',
-      `Other modules: ${all.filter((m) => m.id !== moduleId).map((m) => redact(m.title)).join('; ') || 'none'}`,
-      `Module: ${redact(mod.title)}`,
-      `Already in it: ${mod.items.map((i) => redact(i.title)).join('; ') || 'nothing yet'}`,
-      groups.length ? `Assignment groups in the course: ${groups.map((g) => redact(g)).join(', ')}` : 'No assignment groups yet.',
+      this.context(course, scrub),
+      dto.level?.trim() ? `Level: ${scrub(dto.level)}` : '',
+      `Other modules: ${all.filter((m) => m.id !== moduleId).map((m) => scrub(m.title)).join('; ') || 'none'}`,
+      `Module: ${scrub(mod.title)}`,
+      `Already in it: ${mod.items.map((i) => scrub(i.title)).join('; ') || 'nothing yet'}`,
+      groups.length ? `Assignment groups in the course: ${groups.map((g) => scrub(g)).join(', ')}` : 'No assignment groups yet.',
       `Suggest up to ${count} item${count === 1 ? '' : 's'}.`,
-      dto.brief?.trim() ? `\n<request>\n${redact(dto.brief.trim())}\n</request>` : '',
+      dto.brief?.trim() ? `\n<request>\n${scrub(dto.brief.trim())}\n</request>` : '',
     ]
       .filter(Boolean)
       .join('\n');
@@ -263,12 +277,13 @@ export class AiCourseService {
 
   async pageContent(userId: string, courseId: string, dto: PageContentDraftDto) {
     const course = await this.course(userId, courseId);
+    const scrub = await this.scrubber(courseId);
     const provider = await this.ai.requireProvider(course.school_id);
     const user = [
-      this.context(course),
-      dto.level?.trim() ? `Level: ${redact(dto.level)}` : '',
-      `Page title: ${redact(dto.title)}`,
-      dto.outline?.trim() ? `\n<outline>\n${redact(dto.outline.trim())}\n</outline>` : 'No outline given: cover the title\'s topic.',
+      this.context(course, scrub),
+      dto.level?.trim() ? `Level: ${scrub(dto.level)}` : '',
+      `Page title: ${scrub(dto.title)}`,
+      dto.outline?.trim() ? `\n<outline>\n${scrub(dto.outline.trim())}\n</outline>` : 'No outline given: cover the title\'s topic.',
     ]
       .filter(Boolean)
       .join('\n');
@@ -286,13 +301,14 @@ export class AiCourseService {
 
   async assignmentInstructions(userId: string, courseId: string, dto: AssignmentDraftDto) {
     const course = await this.course(userId, courseId);
+    const scrub = await this.scrubber(courseId);
     const provider = await this.ai.requireProvider(course.school_id);
     const user = [
-      this.context(course),
-      dto.level?.trim() ? `Level: ${redact(dto.level)}` : '',
-      `Assignment title: ${redact(dto.title)}`,
+      this.context(course, scrub),
+      dto.level?.trim() ? `Level: ${scrub(dto.level)}` : '',
+      `Assignment title: ${scrub(dto.title)}`,
       dto.points !== undefined ? `Points: ${dto.points}` : '',
-      dto.brief?.trim() ? `\n<brief>\n${redact(dto.brief.trim())}\n</brief>` : '',
+      dto.brief?.trim() ? `\n<brief>\n${scrub(dto.brief.trim())}\n</brief>` : '',
     ]
       .filter(Boolean)
       .join('\n');
@@ -325,14 +341,15 @@ export class AiCourseService {
 
   async rubricDraft(userId: string, courseId: string, dto: RubricDraftDto) {
     const course = await this.course(userId, courseId);
+    const scrub = await this.scrubber(courseId);
     const provider = await this.ai.requireProvider(course.school_id);
     const user = [
-      this.context(course),
-      dto.level?.trim() ? `Level: ${redact(dto.level)}` : '',
-      `Assignment: ${redact(dto.title)}`,
+      this.context(course, scrub),
+      dto.level?.trim() ? `Level: ${scrub(dto.level)}` : '',
+      `Assignment: ${scrub(dto.title)}`,
       dto.totalPoints !== undefined ? `Total points: ${dto.totalPoints}` : '',
       dto.criteria !== undefined ? `Criteria: ${dto.criteria}` : 'Criteria: 3 to 5.',
-      dto.instructions?.trim() ? `\n<instructions>\n${redact(clip(dto.instructions.trim(), 10_000))}\n</instructions>` : '',
+      dto.instructions?.trim() ? `\n<instructions>\n${scrub(clip(dto.instructions.trim(), 10_000))}\n</instructions>` : '',
     ]
       .filter(Boolean)
       .join('\n');
@@ -356,11 +373,12 @@ export class AiCourseService {
   /** Course staff who may post announcements (TAs included) may draft one. */
   async announcement(userId: string, courseId: string, dto: AnnouncementDraftDto) {
     const course = await this.course(userId, courseId, STAFF_ROLES);
+    const scrub = await this.scrubber(courseId);
     const provider = await this.ai.requireProvider(course.school_id);
     const user = [
-      this.context(course),
+      this.context(course, scrub),
       'Audience: the students of this course (their parents may also read it).',
-      `\n<request>\n${redact(dto.prompt.trim())}\n</request>`,
+      `\n<request>\n${scrub(dto.prompt.trim())}\n</request>`,
     ].join('\n');
     const out = await this.ai.run<{ title: string; body: string }>(
       { userId, schoolId: course.school_id, courseId, feature: 'announcement_draft' },
@@ -377,6 +395,7 @@ export class AiCourseService {
 
   async suggestOutcomes(userId: string, courseId: string, dto: OutcomeSuggestDto) {
     const course = await this.course(userId, courseId);
+    const scrub = await this.scrubber(courseId);
     await this.features.assertEnabled(course.school_id, 'mastery');
     const [modules, pages, activities, existing] = await Promise.all([
       this.prisma.module.findMany({ where: { course_id: courseId }, select: { title: true }, orderBy: { position: 'asc' } }),
@@ -389,14 +408,14 @@ export class AiCourseService {
     }
     const provider = await this.ai.requireProvider(course.school_id);
     const count = dto.count ?? 6;
-    const list = (rows: { title: string }[]) => rows.map((r) => `- ${redact(r.title)}`).join('\n') || '- none';
+    const list = (rows: { title: string }[]) => rows.map((r) => `- ${scrub(r.title)}`).join('\n') || '- none';
     const user = [
-      this.context(course),
-      dto.level?.trim() ? `Level: ${redact(dto.level)}` : '',
+      this.context(course, scrub),
+      dto.level?.trim() ? `Level: ${scrub(dto.level)}` : '',
       `Suggest up to ${count} outcomes.`,
-      `Existing outcome codes (do not reuse): ${existing.map((o) => redact(o.code)).join(', ') || 'none'}`,
+      `Existing outcome codes (do not reuse): ${existing.map((o) => scrub(o.code)).join(', ') || 'none'}`,
       `\n<content>\nModules:\n${list(modules)}\nPages:\n${list(pages)}\nAssessments:\n${list(activities)}\n</content>`,
-      dto.brief?.trim() ? `\n<request>\n${redact(dto.brief.trim())}\n</request>` : '',
+      dto.brief?.trim() ? `\n<request>\n${scrub(dto.brief.trim())}\n</request>` : '',
     ]
       .filter(Boolean)
       .join('\n');

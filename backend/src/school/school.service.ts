@@ -14,6 +14,8 @@ import { SessionService } from '@/account/session.service';
 import { plan } from '@/erasure/erasure-plan';
 import { setSchoolMembership } from '@/common/school-membership';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
+import { EXPLICIT_ONLY_KEYS, type PermissionKey } from '@/permission/permission.catalog';
+import { forgetMfaRequirement } from '@/mfa/mfa.policy';
 
 const SCHOOL_TTL = 60 * 60 * 24 * 30;
 
@@ -215,11 +217,23 @@ export class SchoolService {
     }
 
     const uniqueRoleIds = [...new Set(customRoleIds)];
+    // Keys never implied (safeguarding) that the assigned custom roles grant:
+    // logged as an entry of their own below.
+    const explicitGrants: { role: string; keys: string[] }[] = [];
     if (uniqueRoleIds.length > 0) {
       const customRoles = await this.prisma.school_role
         .findMany({
           where: { id: { in: uniqueRoleIds } },
-          select: { id: true, school_id: true, is_system: true },
+          select: {
+            id: true,
+            name: true,
+            school_id: true,
+            is_system: true,
+            school_role_permission: {
+              where: { permission_catalog: { key: { in: [...EXPLICIT_ONLY_KEYS] } } },
+              select: { permission_catalog: { select: { key: true } } },
+            },
+          },
         })
         .catch(() => null);
       if (
@@ -231,6 +245,12 @@ export class SchoolService {
         )
       ) {
         throw new BadRequestException('Invalid custom role selection');
+      }
+      for (const r of customRoles) {
+        const keys = (r.school_role_permission ?? [])
+          .map((p) => p.permission_catalog?.key)
+          .filter((k): k is string => !!k && EXPLICIT_ONLY_KEYS.has(k as PermissionKey));
+        if (keys.length > 0) explicitGrants.push({ role: r.name, keys });
       }
     }
 
@@ -340,6 +360,24 @@ export class SchoolService {
             ),
           },
         );
+        if (explicitGrants.length > 0) {
+          // Stands out in the log like a safeguarding grant to a role does.
+          await this.auditLog?.record(
+            tx,
+            request.school_id,
+            { id: adminUserId },
+            {
+              entity: 'school_membership_restricted_permission',
+              entityId: membership.id,
+              action: 'update',
+              changes: {
+                user_id: { before: null, after: request.user_id },
+                roles: { before: null, after: explicitGrants.map((g) => g.role).sort() },
+                granted: { before: null, after: [...new Set(explicitGrants.flatMap((g) => g.keys))].sort() },
+              },
+            },
+          );
+        }
         await this.auditLog?.record(
           tx,
           request.school_id,
@@ -364,6 +402,9 @@ export class SchoolService {
     });
 
     await this.cache.delete(`profile:${request.user_id}`);
+    // A role the organisation requires an authenticator app for: their
+    // sessions are checked again on the next request (src/mfa).
+    await forgetMfaRequirement(this.cache, request.user_id);
     this.announceStaff(request.school_id, request.user_id, 'staff.joined', {
       role,
       via: 'join_request',

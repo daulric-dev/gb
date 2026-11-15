@@ -1,4 +1,5 @@
 import { mock, type Mock } from 'bun:test';
+import { Prisma } from '@/generated/prisma/client';
 
 /** Methods every model delegate gets, with what they return by default. */
 const DEFAULTS: Record<string, () => unknown> = {
@@ -95,4 +96,19 @@ export function createMockPrisma(): MockPrisma {
   );
 
   return proxy;
+}
+
+/**
+ * Make every `job_lease` claim on this mock fail as if another instance held
+ * an unexpired lease (the insert hits the primary key, the reclaim matches
+ * no row). Without this the mock grants every lease.
+ */
+export function holdJobLeaseElsewhere(prisma: MockPrisma): void {
+  prisma.job_lease.create.mockRejectedValue(
+    new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+    }),
+  );
+  prisma.job_lease.updateMany.mockResolvedValue({ count: 0 });
 }

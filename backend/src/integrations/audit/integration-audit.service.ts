@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
+import { auditStore } from '@/audit-log/audit-store';
 
 /** Which console a change came from; `system` for the worker's auto-disable. */
 export type IntegrationActorVia = 'school_admin' | 'organisation_admin' | 'system';
@@ -88,8 +89,10 @@ export class IntegrationAuditService {
     entries: IntegrationAuditEntry[],
   ): Promise<void> {
     if (entries.length === 0) return;
-    await tx.integration_audit_log.createMany({
-      data: entries.map((e) => ({
+    await auditStore(this.prisma).append(
+      tx,
+      'integration_audit_log',
+      entries.map((e) => ({
         school_id: schoolId,
         webhook_id: e.webhookId,
         webhook: e.webhook,
@@ -98,7 +101,7 @@ export class IntegrationAuditService {
         action: e.action,
         changes: scrub(e.changes) as Prisma.InputJsonValue,
       })),
-    });
+    );
   }
 
   /** A school's entries, newest first; `before` is the last id shown. */

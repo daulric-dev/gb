@@ -62,7 +62,7 @@ export class WebhookEvents {
       if (!schoolId) return 0;
       if (!(await this.features.isEnabled(schoolId, 'integrations'))) return 0;
       const hooks = await this.prisma.school_webhook.findMany({
-        where: { school_id: schoolId, enabled: true, events: { has: type } },
+        where: { school_id: schoolId, enabled: true, event_subscriptions: { some: { event_type: type } } },
         select: { id: true },
       });
       if (hooks.length === 0) return 0;

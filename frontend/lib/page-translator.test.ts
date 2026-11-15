@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { ApiError } from "@/lib/api";
 import {
   attributesFor,
+  BLOCKED_SELECTOR,
   collectTargets,
+  isBlockedRoute,
   PageTranslator,
   type TranslateFn,
 } from "@/lib/page-translator";
@@ -311,6 +313,138 @@ describe("PageTranslator", () => {
     await t.whenIdle();
     expect(attempts).toBe(1);
     expect(errors).toBe(1);
+    t.destroy();
+  });
+});
+
+describe("personal data is never sent", () => {
+  test("translate=no, .notranslate and data-private subtrees are skipped, text and attributes", () => {
+    root.innerHTML = `
+      <h2>Students</h2>
+      <span class="avatar" translate="no" title="Ada Lovelace">AL</span>
+      <span data-private>Ada Lovelace</span>
+      <div data-private><p>Feedback: <em>great work</em></p><button aria-label="Reply to Ada">x</button></div>
+      <span class="notranslate">ada@school.org</span>
+      <div translate="no"><img alt="Photo of Ada" src="x.png"></div>
+    `;
+    expect(texts(root)).toEqual(["Students"]);
+    expect(collectTargets(root).elements).toEqual([]);
+    for (const sel of ['[translate="no"]', ".notranslate", "[data-private]"]) {
+      expect(BLOCKED_SELECTOR.split(",")).toContain(sel);
+    }
+  });
+
+  test("data-private-label keeps an element's own labels but translates its children", () => {
+    root.innerHTML = `<nav id="n" aria-label="Ada's pages" data-private-label><a href="#">Grades</a></nav>`;
+    expect(attributesFor(root.querySelector("#n")!)).toEqual([]);
+    expect(texts(root)).toEqual(["Grades"]);
+  });
+
+  test("marked content is never sent by the translator, even when added later", async () => {
+    root.innerHTML = `<p>Grades</p><table><tbody translate="no"><tr><td>Ada Lovelace</td><td>A-</td></tr></tbody></table>`;
+    const { fn, calls } = fakeTranslate();
+    const t = make(fn);
+    t.setLanguage("es");
+    await t.whenIdle();
+    root.insertAdjacentHTML("beforeend", `<p data-private>Grace Hopper</p><p>Due soon</p>`);
+    t.flushMutations();
+    await t.whenIdle();
+    expect(calls.flat()).toEqual(["Grades", "Due soon"]);
+    t.destroy();
+  });
+
+  test("blocked routes: messages, pastoral, student records, analytics and audit logs", () => {
+    for (const path of [
+      "/dashboard/chat",
+      "/dashboard/chat/123",
+      "/portal/messages",
+      "/portal/messages/",
+      "/dashboard/pastoral",
+      "/dashboard/pastoral/settings",
+      "/dashboard/students/abc",
+      "/Dashboard/Students/abc/",
+      "/dashboard/attendance/students/abc",
+      "/dashboard/courses/c1/outcomes/students/s1",
+      "/dashboard/analytics",
+      "/dashboard/courses/c1/analytics",
+      "/dashboard/audit-log",
+      "/organisation/audit-log",
+    ]) {
+      expect(isBlockedRoute(path)).toBe(true);
+    }
+    for (const path of [
+      "/dashboard",
+      "/dashboard/students",
+      "/dashboard/chatter",
+      "/dashboard/courses/c1/grades",
+      "/dashboard/courses/c1/outcomes",
+      "/portal/courses/c1/discussions",
+      "/parent/s1/grades",
+      null,
+      undefined,
+    ]) {
+      expect(isBlockedRoute(path)).toBe(false);
+    }
+  });
+
+  test("on a blocked route nothing is collected or sent; leaving it translates again", async () => {
+    root.innerHTML = `<p>Private message from Ada</p>`;
+    let blocked = true;
+    const { fn, calls } = fakeTranslate();
+    const t = make(fn, { isBlocked: () => blocked });
+    t.setLanguage("es");
+    await t.whenIdle();
+    root.appendChild(document.createElement("p")).textContent = "Another message";
+    t.flushMutations();
+    await t.whenIdle();
+    expect(calls).toEqual([]);
+    expect(root.textContent).toBe("Private message from AdaAnother message");
+
+    blocked = false;
+    root.innerHTML = `<p>Course home</p>`;
+    t.routeChanged();
+    await t.whenIdle();
+    expect(calls).toEqual([["Course home"]]);
+    expect(root.textContent).toBe("ES:Course home");
+
+    // Navigating to a blocked page restores the page and sends nothing more.
+    blocked = true;
+    t.routeChanged();
+    expect(root.textContent).toBe("Course home");
+    root.appendChild(document.createElement("p")).textContent = "Pastoral note";
+    t.flushMutations();
+    await t.whenIdle();
+    expect(calls.length).toBe(1);
+    t.destroy();
+  });
+
+  test("batches queued before navigating to a blocked page are dropped, not sent", async () => {
+    root.innerHTML = Array.from({ length: 5 }, (_, i) => `<p>Text number ${i}</p>`).join("");
+    let blocked = false;
+    const calls: string[][] = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const t = make(
+      async (texts) => {
+        calls.push(texts);
+        await gate;
+        return texts.map((x) => `ES:${x}`);
+      },
+      { isBlocked: () => blocked, firstBatchSize: 1, concurrency: 1 },
+    );
+    t.setLanguage("es");
+    // The first batch (one text) is in flight; the rest wait for its slot.
+    expect(calls.length).toBe(1);
+    blocked = true;
+    release();
+    await t.whenIdle();
+    expect(calls.length).toBe(1);
+
+    // Back on an allowed page, the dropped texts are requested again.
+    blocked = false;
+    t.routeChanged();
+    await t.whenIdle();
+    expect(calls.flat().sort()).toEqual([0, 1, 2, 3, 4].map((i) => `Text number ${i}`).sort());
     t.destroy();
   });
 });

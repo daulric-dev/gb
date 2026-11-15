@@ -329,7 +329,7 @@ export function PeerReviewPanel({
                     const p = r.reviewer ? progress.get(r.reviewer.id) : null;
                     return (
                       <TableRow key={r.id}>
-                        <TableCell>
+                        <TableCell translate="no">
                           {canManage && !r.submittedAt ? (
                             <NativeSelect
                               size="sm"
@@ -356,7 +356,7 @@ export function PeerReviewPanel({
                           )}
                           {p && <span className="ml-2 text-xs text-muted-foreground">{p.done}/{p.total} done</span>}
                         </TableCell>
-                        <TableCell>{r.author?.name}</TableCell>
+                        <TableCell translate="no">{r.author?.name}</TableCell>
                         <TableCell>
                           {r.hidden ? (
                             <Badge variant="outline">
@@ -377,6 +377,7 @@ export function PeerReviewPanel({
                             size="sm"
                             variant="ghost"
                             aria-label={r.hidden ? `Show review by ${r.reviewer?.name}` : `Hide review by ${r.reviewer?.name}`}
+                            data-private-label
                             disabled={saving.value}
                             onClick={() => {
                               if (r.hidden) {
@@ -394,6 +395,7 @@ export function PeerReviewPanel({
                               size="sm"
                               variant="ghost"
                               aria-label={`Remove review by ${r.reviewer?.name}`}
+                              data-private-label
                               disabled={!editable}
                               onClick={() => void run(() => peerReviewApi.remove(activityId, r.id), "Review removed")}
                             >
@@ -461,7 +463,7 @@ export function PeerReviewPanel({
       )}
 
       <Dialog open={!!viewing.value} onOpenChange={(o) => !o && (viewing.value = null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto" translate="no">
           <DialogHeader>
             <DialogTitle>
               {viewing.value?.reviewer?.name} reviewing {viewing.value?.author?.name}

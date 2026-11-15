@@ -37,9 +37,7 @@ type Env = Record<string, string | undefined>;
  *
  * `SMTP_URL` wins when both are set. Returns null when nothing is configured.
  */
-export function smtpOptions(
-  env: Env = process.env,
-): string | SMTPTransport.Options | null {
+export function smtpOptions(env: Env = process.env): string | SMTPTransport.Options | null {
   if (env.SMTP_URL) return env.SMTP_URL;
 
   const service = env.SMTP_SERVICE?.trim().toLowerCase();

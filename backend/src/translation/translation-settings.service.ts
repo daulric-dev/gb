@@ -10,6 +10,7 @@ import {
 } from './translation.constants';
 import { checkLibreUrl, TranslationUrlError, type EngineConfig } from './translation-engine';
 import type { TranslationSettingsDto } from './translation.dto';
+import { UNCONTRACTED_ENGINE_MESSAGE, engineAllowed, uncontractedEnginesAllowed } from './engine-policy';
 
 const SELECT = {
   engine: true,
@@ -37,10 +38,15 @@ export interface TranslationSettingsView {
   allowPrivateNetwork: boolean;
   enabled: boolean;
   updatedAt: string | null;
+  /** The server allows Google and Yandex (TRANSLATION_ALLOW_UNCONTRACTED_ENGINES=true). */
+  uncontractedEnginesAllowed: boolean;
+  /** The saved engine is Google or Yandex and the server does not allow it: translation is off. */
+  engineBlocked: boolean;
 }
 
-export const DEFAULT_VIEW: TranslationSettingsView = {
-  engine: 'google',
+/** Without saved settings: the recommended engine (LibreTranslate), off. */
+export const DEFAULT_VIEW: Omit<TranslationSettingsView, 'uncontractedEnginesAllowed' | 'engineBlocked'> = {
+  engine: 'libre',
   url: null,
   hasKey: false,
   allowPrivateNetwork: false,
@@ -74,14 +80,18 @@ export class TranslationSettingsService {
   }
 
   private static view(row: Row | null): TranslationSettingsView {
-    if (!row) return { ...DEFAULT_VIEW };
+    const policy = { uncontractedEnginesAllowed: uncontractedEnginesAllowed() };
+    if (!row) return { ...DEFAULT_VIEW, ...policy, engineBlocked: false };
+    const engine = row.engine as TranslationEngine;
     return {
-      engine: row.engine as TranslationEngine,
+      engine,
       url: row.url,
       hasKey: row.key_enc !== null,
       allowPrivateNetwork: row.allow_private_network,
       enabled: row.enabled,
       updatedAt: row.updated_at.toISOString(),
+      ...policy,
+      engineBlocked: row.enabled && !engineAllowed(engine),
     };
   }
 
@@ -107,6 +117,9 @@ export class TranslationSettingsService {
   async update(dto: TranslationSettingsDto, actorId: string): Promise<TranslationSettingsView> {
     const before = await this.row();
     const engine = dto.engine;
+    // Google / Yandex: refused unless the server allows them. Saving one
+    // switched off stays possible, so an admin can turn a saved one off.
+    if (!engineAllowed(engine) && dto.enabled) throw new BadRequestException(UNCONTRACTED_ENGINE_MESSAGE);
     const allowPrivate = dto.allowPrivateNetwork ?? before?.allow_private_network ?? false;
 
     // URL: LibreTranslate only. Omitted keeps the stored one (same engine).

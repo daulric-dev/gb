@@ -396,6 +396,15 @@ export class ReportReleaseService {
     if (missing.length) {
       archive.append(`Not generated yet:\n${missing.join('\n')}\n`, { name: 'missing.txt' });
     }
+    // A bulk export of student reports: one export entry per download.
+    await this.auditLog?.recordExport(userId, {
+      schoolId,
+      entity: 'report_card',
+      entityId: courseId ?? termId,
+      scope: courseId ? 'course' : 'school',
+      rows: students.length - missing.length,
+      details: { term_id: termId, format: 'zip', missing: missing.length },
+    });
     void archive.finalize().catch((error: Error) => {
       this.logger.error(`Failed to build the report archive: ${error.message}`);
     });

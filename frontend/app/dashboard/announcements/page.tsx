@@ -159,7 +159,7 @@ export default function AnnouncementsPage() {
                       </Badge>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground" translate="no">
                     {authorName(a)} · {formatWhen(a.created_at)}
                   </p>
                 </div>

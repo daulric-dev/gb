@@ -683,7 +683,10 @@ export default function PortalWorkDetailPage() {
           <CardContent className="flex items-center gap-3 py-4">
             <CheckCircle2 className="size-5 shrink-0 text-emerald-600" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">
+              <p
+                className="text-sm font-medium"
+                translate={!w.submission?.excused && w.submission?.status === "graded" ? "no" : undefined}
+              >
                 {w.submission?.excused
                   ? "Excused - this doesn't count toward your grade"
                   : w.submission?.status === "graded"
@@ -699,7 +702,7 @@ export default function PortalWorkDetailPage() {
                       : "Handed in"}
               </p>
               {w.submission?.feedback && (
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="mt-0.5 text-xs text-muted-foreground" translate="no">
                   {w.submission.feedback}
                 </p>
               )}

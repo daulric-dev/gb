@@ -2,6 +2,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Markdown } from "@/components/markdown";
+import { NoTranslate } from "@/components/translation/no-translate";
 import { formatDateTime, type PortalAnnouncement } from "./types";
 
 /**
@@ -30,7 +31,7 @@ export function SchoolAnnouncementItem({
       <div className="min-w-0 flex-1 space-y-1">
         <h3 className="font-medium leading-snug">{a.title}</h3>
         <p className="text-xs text-muted-foreground">
-          {name} · {formatDateTime(a.created_at)}
+          <NoTranslate>{name}</NoTranslate> · {formatDateTime(a.created_at)}
         </p>
         {a.body &&
           (compact ? (

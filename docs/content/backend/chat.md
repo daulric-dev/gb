@@ -45,7 +45,7 @@ Scope: message **body** is encrypted (this includes system-message captions, e.g
 
 ## Data model
 
-Schema: `backend/prisma/schema/chat.prisma` (Postgres schema `chat`; created by `backend/prisma/migrations/0_baseline`).
+Schema: `backend/prisma/schema/chat.prisma` (Postgres schema `chat`; created by `prisma db push` via `bun run db:deploy`).
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
@@ -55,7 +55,7 @@ Schema: `backend/prisma/schema/chat.prisma` (Postgres schema `chat`; created by 
 
 **Access is enforced in the API** (there is no row-level security): a user may only see a conversation, its membership, and its messages if they are a member, scoped to their school.
 
-> After changing the schema, run `bun db:migrate` (which also regenerates the Prisma client; `bun db:generate` regenerates it alone).
+> After changing the schema, run `bun run db:deploy` in `backend/` (which also regenerates the Prisma client; `bun run db:generate` regenerates it alone).
 
 ## Realtime: SSE + Redis pub/sub
 

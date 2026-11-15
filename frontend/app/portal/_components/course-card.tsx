@@ -30,12 +30,12 @@ export function CourseCard({ course }: { course: PortalCourseCard }) {
         >
           <CourseBannerBackdrop course={course} />
           {course.code && (
-            <span className="relative rounded-md bg-black/20 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
+            <span className="relative rounded-md bg-black/20 px-2 py-0.5 text-xs font-medium backdrop-blur-sm" translate="no">
               {course.code}
             </span>
           )}
           {percent !== null && (
-            <div className="absolute right-3 bottom-3 rounded-lg bg-background/95 px-2.5 py-1 text-right text-foreground shadow-sm">
+            <div className="absolute right-3 bottom-3 rounded-lg bg-background/95 px-2.5 py-1 text-right text-foreground shadow-sm" translate="no">
               <p className="text-sm leading-tight font-semibold">
                 {formatPercent(percent)}
                 {letter && (
@@ -49,7 +49,7 @@ export function CourseCard({ course }: { course: PortalCourseCard }) {
           <p className="line-clamp-2 font-semibold leading-snug group-hover:underline">
             {course.name}
           </p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="truncate text-xs text-muted-foreground" translate={teachers ? "no" : undefined}>
             {teachers ?? "No teacher listed"}
           </p>
           {archived && (

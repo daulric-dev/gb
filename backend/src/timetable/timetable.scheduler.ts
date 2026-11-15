@@ -4,6 +4,7 @@ import { FeatureService } from '@/features/feature.service';
 import { AttendanceService } from '@/attendance/attendance.service';
 import { addDays, localParts, toDbDate } from '@/common/time-zone';
 import { TimetableService, type TimetableOccurrence } from './timetable.service';
+import { withJobLease } from '@/common/job-lease';
 
 const TICK_MS = 60 * 1000;
 const FIRST_TICK_MS = 20 * 1000;
@@ -19,7 +20,7 @@ export interface TickResult {
  * point and the period's end as `closes_at`, so the attendance sweep closes
  * it then and records the absentees.
  *
- * Every minute in each API instance; a Postgres advisory lock lets one
+ * Every minute in each API instance; a `job_lease` claim lets one
  * instance run at a time (like the parent notice and retention sweeps), so
  * it needs no Redis. Each occurrence (entry + scheduled date) is claimed
  * with an insert into `course.timetable_occurrence` before its session is
@@ -61,17 +62,11 @@ export class TimetableScheduler implements OnModuleInit, OnModuleDestroy {
     if (this.running) return result;
     this.running = true;
     try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
-            SELECT pg_try_advisory_xact_lock(hashtext(${'gradebook:timetable'})) AS locked`;
-          if (!rows?.[0]?.locked) return;
-          const r = await this.run(now);
-          result.opened = r.opened;
-          result.skipped = r.skipped;
-        },
-        { maxWait: 10_000, timeout: 5 * 60_000 },
-      );
+      await withJobLease(this.prisma, 'gradebook:timetable', 5 * 60_000, async () => {
+        const r = await this.run(now);
+        result.opened = r.opened;
+        result.skipped = r.skipped;
+      });
       if (result.opened > 0) this.logger.log(`Opened ${result.opened} timetabled sessions`);
     } catch (err) {
       this.logger.error(`Timetable tick failed: ${(err as Error).message}`);

@@ -54,6 +54,7 @@ import { OrganisationModule } from '@/organisation/organisation.module';
 import { FeaturesModule } from '@/features/features.module';
 import { ErasureModule } from '@/erasure/erasure.module';
 import { RetentionModule } from '@/retention/retention.module';
+import { DatabaseSetupModule } from '@/database-setup/database-setup.module';
 import { AppVersionModule } from '@/app-version/app-version.module';
 import { IntegrationsModule } from '@/integrations/integrations.module';
 import { AuditLogModule } from '@/audit-log/audit-log.module';
@@ -62,6 +63,10 @@ import { ParentPortalModule } from '@/parent-portal/parent-portal.module';
 import { LtiModule } from '@/lti/lti.module';
 import { RosteringModule } from '@/rostering/rostering.module';
 import { MasteryModule } from '@/mastery/mastery.module';
+import { DataExportModule } from '@/data-export/data-export.module';
+import { StudentRestrictionModule } from '@/student-restriction/student-restriction.module';
+import { PrivacyModule } from '@/privacy/privacy.module';
+import { MfaModule } from '@/mfa/mfa.module';
 import { HealthService } from '@/health/health.service';
 
 @Module({
@@ -140,6 +145,7 @@ import { HealthService } from '@/health/health.service';
     StorageModule,
     MailModule,
     AccountModule,
+    MfaModule,
     AuthModule,
     StudentAccountModule,
     StudentPortalModule,
@@ -183,13 +189,17 @@ import { HealthService } from '@/health/health.service';
     OrganisationModule,
     ErasureModule,
     RetentionModule,
+    DatabaseSetupModule,
     AppVersionModule,
     IntegrationsModule.forRoot(),
     AuditLogModule,
     LtiModule,
     ReportCardModule.forRoot(),
+    DataExportModule.forRoot(),
     RosteringModule.forRoot(),
     MasteryModule,
+    StudentRestrictionModule,
+    PrivacyModule,
   ],
   controllers: [AppController],
   providers: [

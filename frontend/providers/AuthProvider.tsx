@@ -17,6 +17,7 @@ import {
   setUnauthorizedHandler,
 } from "@/lib/api";
 import { loginPath } from "@/lib/routing";
+import { clearTranslationCache } from "@/lib/translation";
 
 export interface UserProfile {
   id: string;
@@ -85,6 +86,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void fetchProfile();
   }, [fetchProfile]);
+
+  // Signed out (or another account signed in) in this tab: forget cached
+  // translations of the previous user's pages. Leaving the app shell (the
+  // sign-out buttons) clears them too; the language choice stays.
+  useEffect(() => {
+    let lastId: string | null = null;
+    return profile.subscribe((p) => {
+      const id = p?.id ?? null;
+      if (lastId !== null && id !== lastId) clearTranslationCache();
+      lastId = id;
+    });
+  }, [profile]);
 
   // `lib/api` throws on a 401 from anywhere in the app, including code with no
   // component around it. Giving it the router here is what keeps the trip to

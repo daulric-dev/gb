@@ -29,9 +29,14 @@ describe('ParentNotificationService', () => {
       kinds: ['missing_work', 'absence', 'new_grade', 'announcement'],
     };
     prisma.organisation.findFirst.mockImplementation(async () => ({ features: org }));
-    prisma.school.findUnique.mockImplementation(async () => ({ disabled_features: disabled }));
+    prisma.school.findUnique.mockImplementation(async () => ({ disabled_feature_rows: disabled.map((feature) => ({ feature })) }));
     prisma.parent_notification_pref.findMany.mockImplementation(async () => [
-      { user_profile_id: 'p1', ...pref },
+      {
+        user_profile_id: 'p1',
+        email_enabled: pref.email_enabled,
+        push_enabled: pref.push_enabled,
+        kind_preferences: pref.kinds.map((kind) => ({ kind })),
+      },
     ]);
     prisma.parent_student_link.findMany.mockImplementation(async () => [
       {
@@ -207,12 +212,22 @@ describe('ParentNotificationService', () => {
     expect(prisma.parent_notification_sent.createManyAndReturn.mock.calls[0][0].skipDuplicates).toBe(true);
     expect(push.sendToUsers).toHaveBeenCalledTimes(1);
     expect((push.sendToUsers.mock.calls[0] as any)[1].data.type).toBe('parent.new_grade');
+    // A child's news: the parent category (own settings), sensitive, the child's school decides the content.
+    expect((push.sendToUsers.mock.calls[0] as any)[1]).toMatchObject({ category: 'parent', sensitive: true });
+    expect((push.sendToUsers.mock.calls[0] as any)[1].schoolId).toBeTruthy();
     expect(mail.send).toHaveBeenCalledTimes(1);
+    // The mail log gets a kind, never the subject (which names the child).
+    expect((mail.send.mock.calls[0] as any)[0].kind).toBe('parent_notice');
   });
 
   test('email and push follow the parent switches', async () => {
     pref = { ...pref, email_enabled: false, push_enabled: true };
-    prisma.parent_notification_pref.findMany.mockResolvedValue([{ user_profile_id: 'p1', ...pref }]);
+    prisma.parent_notification_pref.findMany.mockResolvedValue([{
+      user_profile_id: 'p1',
+      email_enabled: pref.email_enabled,
+      push_enabled: pref.push_enabled,
+      kind_preferences: pref.kinds.map((kind) => ({ kind })),
+    }] as any);
     await service.sweep(NOW);
     expect(mail.send).not.toHaveBeenCalled();
     expect(push.sendToUsers).toHaveBeenCalled();
@@ -236,7 +251,14 @@ describe('ParentNotificationService', () => {
     await service.setPrefs('p1', { emailEnabled: true, kinds: ['absence', 'absence'] });
     const call = prisma.parent_notification_pref.upsert.mock.calls[0][0];
     expect(call.where).toEqual({ user_profile_id: 'p1' });
-    expect(call.create).toMatchObject({ user_profile_id: 'p1', email_enabled: true, kinds: ['absence'] });
+    expect(call.create).toMatchObject({
+      user_profile_id: 'p1',
+      email_enabled: true,
+      kind_preferences: { create: [{ kind: 'absence' }] },
+    });
+    expect(prisma.parent_notification_kind.createMany).toHaveBeenCalledWith({
+      data: [{ user_profile_id: 'p1', kind: 'absence' }],
+    });
   });
 
   describe('attendance alerts (attendance_alerts feature)', () => {

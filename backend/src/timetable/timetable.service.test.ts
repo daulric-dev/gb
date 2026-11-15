@@ -117,6 +117,21 @@ describe('TimetableService', () => {
     expect(prisma.timetable_setting.upsert.mock.calls[0][0].create.cycle_length).toBe(6);
   });
 
+  test('school open weekdays are read and replaced as relational rows', async () => {
+    prisma.timetable_school_day.findMany.mockResolvedValue([{ weekday: 1 }, { weekday: 3 }, { weekday: 5 }]);
+    expect((await service.context('s1')).settings.schoolDays).toEqual([1, 3, 5]);
+
+    await service.updateSettings('u1', 's1', { schoolDays: [2, 4] });
+
+    expect(prisma.timetable_school_day.deleteMany).toHaveBeenCalledWith({ where: { school_id: 's1' } });
+    expect(prisma.timetable_school_day.createMany).toHaveBeenCalledWith({
+      data: [
+        { school_id: 's1', weekday: 2 },
+        { school_id: 's1', weekday: 4 },
+      ],
+    });
+  });
+
   test('time zone names are validated (IANA only)', async () => {
     for (const tz of ['Mars/Base', '', 'Europe/Londonn', 'GMT+25', 'x'.repeat(65)]) {
       expect(await expectRejection(service.updateSettings('u1', 's1', { timeZone: tz }))).toBeInstanceOf(
@@ -181,18 +196,6 @@ describe('TimetableService', () => {
     prisma.school.findUnique.mockResolvedValue({ time_zone: 'Asia/Tokyo' });
     await audited.updateSettings('admin-1', 's1', { timeZone: 'Asia/Tokyo' });
     expect(record).toHaveBeenCalledTimes(1);
-  });
-
-  test('the migration makes the zone nullable without a default and clears the old UTC default', () => {
-    const sql = readFileSync(
-      join(__dirname, '../../prisma/migrations/20261122100000_school_time_zone_explicit/migration.sql'),
-      'utf8',
-    );
-    expect(sql).toContain('ALTER TABLE public.school ALTER COLUMN time_zone DROP NOT NULL;');
-    expect(sql).toContain('ALTER TABLE public.school ALTER COLUMN time_zone DROP DEFAULT;');
-    expect(sql).toContain("UPDATE public.school SET time_zone = NULL WHERE time_zone = 'UTC';");
-    // Only the old default is cleared: a real zone is left alone.
-    expect(sql).not.toMatch(/UPDATE public\.school SET time_zone = NULL;/);
   });
 
   test('ranges are validated and capped', async () => {

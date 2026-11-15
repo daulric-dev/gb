@@ -13,6 +13,7 @@ import {
   type OutcomeProgress,
 } from "@/lib/mastery";
 import { cn } from "@/lib/utils";
+import { NoTranslate } from "@/components/translation/no-translate";
 
 const TONE_CLASS: Record<LevelTone, string> = {
   none: "border-dashed border-border bg-transparent text-muted-foreground",
@@ -106,7 +107,7 @@ export function OutcomeProgressList({
               </Heading>
               {o.setTitle && <p className="text-xs text-muted-foreground">{o.setTitle}</p>}
             </div>
-            <div className="flex flex-col items-end gap-1">
+            <div className="flex flex-col items-end gap-1" translate="no">
               <LevelBadge level={o.mastery.level} label={o.mastery.label} scale={scale} />
               <StatusText result={o.mastery} />
             </div>
@@ -122,12 +123,14 @@ export function OutcomeProgressList({
                   <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
                     <div className="min-w-0">
                       <p className="truncate">{e.activityTitle}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground" translate="no">
                         {formatEvidenceDate(e.assessedAt)} · {SOURCE_LABEL[e.source]}
                         {e.detail ? `: ${e.detail}` : ""} · {e.percent}%
                       </p>
                     </div>
-                    <LevelBadge level={e.level} label={e.label} scale={scale} />
+                    <NoTranslate>
+                      <LevelBadge level={e.level} label={e.label} scale={scale} />
+                    </NoTranslate>
                   </li>
                 ))}
               </ol>

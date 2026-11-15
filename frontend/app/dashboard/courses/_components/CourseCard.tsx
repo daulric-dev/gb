@@ -49,7 +49,7 @@ export function CourseCard({
         <div className="relative h-24 shrink-0">
           <CourseBannerBackdrop course={course} />
           {course.code && (
-            <span className="absolute bottom-2 left-3 rounded-md bg-black/25 px-2 py-0.5 font-mono text-xs font-medium text-white backdrop-blur-sm">
+            <span className="absolute bottom-2 left-3 rounded-md bg-black/25 px-2 py-0.5 font-mono text-xs font-medium text-white backdrop-blur-sm" translate="no">
               {course.code}
             </span>
           )}

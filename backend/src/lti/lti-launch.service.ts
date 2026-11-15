@@ -3,7 +3,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { MfaService } from '@/mfa/mfa.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { FeatureService } from '@/features/feature.service';
 import { isUniqueViolation } from '@/common/db-values';
@@ -77,6 +79,8 @@ export class LtiLaunchService {
     private readonly access: CourseAccessService,
     private readonly features: FeatureService,
     private readonly keys: PlatformKeyService,
+    // Global (src/mfa); optional only so unit tests can leave it out.
+    @Optional() private readonly mfa?: MfaService,
   ) {}
 
   async start(userId: string, courseId: string, moduleItemId: string) {
@@ -159,9 +163,14 @@ export class LtiLaunchService {
    * a GradeBook session cookie sent with it, if any: a launch ticket is only
    * spent by the browser of the user it was issued to (when the cookie is
    * there to tell; the mobile app's in-app browser has none).
+   * `sessionBlocked`: that session belongs to a deactivated account or may
+   * only set up an authenticator app (AuthGuard would refuse it).
    */
-  async authorize(params: AuthParams, sessionUserId: string | null): Promise<HtmlPage> {
+  async authorize(params: AuthParams, sessionUserId: string | null, sessionBlocked = false): Promise<HtmlPage> {
     try {
+      if (sessionBlocked) {
+        throw new LaunchRefused('Your GradeBook session cannot open external tools. Sign in to GradeBook again.');
+      }
       return await this.authorizeOrThrow(params, sessionUserId);
     } catch (error) {
       if (error instanceof LaunchRefused) {
@@ -184,7 +193,7 @@ export class LtiLaunchService {
         id: true,
         client_id: true,
         enabled: true,
-        redirect_uris: true,
+        redirect_uri_entries: { select: { redirect_uri: true } },
         target_link_uri: true,
         ags_enabled: true,
         send_name: true,
@@ -194,7 +203,9 @@ export class LtiLaunchService {
     });
     if (!tool) throw new LaunchRefused('Unknown tool.');
     // Never post a token anywhere the organisation did not register.
-    if (!tool.redirect_uris.includes(redirectUri)) throw new LaunchRefused('The redirect URI is not registered for this tool.');
+    if (!tool.redirect_uri_entries.some(({ redirect_uri }) => redirect_uri === redirectUri)) {
+      throw new LaunchRefused('The redirect URI is not registered for this tool.');
+    }
 
     if (param(params, 'scope') !== 'openid') throw new LaunchRefused('scope must be openid.');
     if (param(params, 'response_type') !== 'id_token') throw new LaunchRefused('response_type must be id_token.');
@@ -241,6 +252,17 @@ export class LtiLaunchService {
       throw new LaunchRefused('This launch was started by a different account.');
     }
     if (!tool.enabled) throw new LaunchRefused('This tool has been switched off by your organisation.');
+    // The ticket's user, whatever browser spends it: never a deactivated
+    // account, nor one the organisation requires an authenticator app of who
+    // has none (both are refused by AuthGuard everywhere else).
+    const owner = await this.prisma.user_profile.findUnique({
+      where: { id: launch.user_profile_id },
+      select: { is_active: true },
+    });
+    if (!owner || owner.is_active === false) throw new LaunchRefused('This account is deactivated.');
+    if (this.mfa && (await this.mfa.enrolmentRequired(launch.user_profile_id))) {
+      throw new LaunchRefused('Set up two-step verification in GradeBook before opening external tools.');
+    }
     const course = launch.resource_link.course;
     if (!(await this.features.isEnabled(course.school_id, 'lti'))) {
       throw new LaunchRefused('External tools are turned off for your school.');
@@ -269,7 +291,7 @@ export class LtiLaunchService {
       throw error;
     }
 
-    const claims = await this.claims({ tool, launch, nonce });
+    const claims = await this.claims({ tool, launch: { ...launch, roles: stringList(launch.roles) }, nonce });
     const idToken = await this.keys.sign(claims);
     return autoPostPage(redirectUri, state === undefined ? { id_token: idToken } : { id_token: idToken, state });
   }
@@ -361,4 +383,8 @@ export class LtiLaunchService {
     }
     return claims;
   }
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }

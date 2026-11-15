@@ -1,7 +1,12 @@
 import type { PrismaService } from '@/prisma/prisma.service';
 import type { StorageService } from '@/storage/storage.service';
 import { dataEncryptionKey } from './secret';
-import { isSealedWithCurrentDataKey } from './secret-box';
+import { isSealedWithCurrentDataKey, openSecret, sealSecret } from './secret-box';
+import { MFA_SECRET_INFO } from '@/mfa/mfa.service';
+import { AI_KEY_INFO, aiKeyAad } from '@/ai/ai.constants';
+import { TRANSLATION_KEY_AAD, TRANSLATION_KEY_INFO } from '@/translation/translation.constants';
+import { ROSTER_SECRET_INFO, rosterSecretAad } from '@/rostering/rostering.constants';
+import { LTI_PLATFORM_KEY_INFO } from '@/lti/platform-key.service';
 import { decryptWebhookHeaderValue, decryptWebhookSecret, encryptWebhookHeaderValue, encryptWebhookSecret } from '@/integrations/webhooks/webhook-secret';
 import { decryptSsoSecret, encryptSsoSecret } from '@/sso/sso-secret';
 import { entrySigningKey, signEntry } from '@/erasure/erasure-log.service';
@@ -14,8 +19,12 @@ import { isEntry } from '@/erasure/erasure-replay.service';
  * the *current* AUTH_SECRET and the new DATA_ENCRYPTION_KEY both set):
  *
  * - every `v1` value (AUTH_SECRET) in school_webhook.secret_enc,
- *   school_webhook_header.value_enc and school_sso_provider.client_secret_enc
- *   is decrypted and written again as `v2` (DATA_ENCRYPTION_KEY);
+ *   school_webhook_header.value_enc, school_sso_provider.client_secret_enc,
+ *   mfa_totp.secret_enc and .pending_secret_enc (authenticator secrets),
+ *   ai_provider.api_key_enc, translation_setting.key_enc,
+ *   roster_source.client_secret_enc and lti_platform_key.private_key_sealed
+ *   is decrypted and written again as `v2` (DATA_ENCRYPTION_KEY), each with
+ *   its own purpose and additional data, as the owning service seals it;
  * - every erasure-log copy in object storage signed with the AUTH_SECRET key
  *   is signed again with the DATA_ENCRYPTION_KEY one (only when its current
  *   signature verifies, so nothing unverified gains a valid signature).
@@ -37,11 +46,29 @@ export interface RotationCount {
 }
 
 export type SecretRotationReport = Record<
-  'webhookSecrets' | 'webhookHeaders' | 'ssoSecrets' | 'erasureLog',
+  | 'webhookSecrets'
+  | 'webhookHeaders'
+  | 'ssoSecrets'
+  | 'mfaSecrets'
+  | 'aiProviderKeys'
+  | 'translationKeys'
+  | 'rosterSecrets'
+  | 'ltiPlatformKeys'
+  | 'erasureLog',
   RotationCount
 >;
 
-type Db = Pick<PrismaService, 'school_webhook' | 'school_webhook_header' | 'school_sso_provider'>;
+type Db = Pick<
+  PrismaService,
+  | 'school_webhook'
+  | 'school_webhook_header'
+  | 'school_sso_provider'
+  | 'mfa_totp'
+  | 'ai_provider'
+  | 'translation_setting'
+  | 'roster_source'
+  | 'lti_platform_key'
+>;
 type Store = Pick<StorageService, 'listKeys' | 'getBuffer' | 'put'>;
 
 const empty = (): RotationCount => ({ scanned: 0, rewritten: 0, current: 0, failed: 0, raced: 0 });
@@ -78,7 +105,19 @@ export async function reencryptStoredSecrets(
 ): Promise<Omit<SecretRotationReport, 'erasureLog'>> {
   if (!dataEncryptionKey()) throw new Error('DATA_ENCRYPTION_KEY is not set: nothing to re-encrypt to');
   const dryRun = !!opts.dryRun;
-  const report = { webhookSecrets: empty(), webhookHeaders: empty(), ssoSecrets: empty() };
+  const report = {
+    webhookSecrets: empty(),
+    webhookHeaders: empty(),
+    ssoSecrets: empty(),
+    mfaSecrets: empty(),
+    aiProviderKeys: empty(),
+    translationKeys: empty(),
+    rosterSecrets: empty(),
+    ltiPlatformKeys: empty(),
+  };
+  /** Reseal one secret-box value under `info` with `aad`. */
+  const box = (stored: string, info: string, aad: Buffer) =>
+    reseal(stored, (v) => openSecret(info, aad, v), (p) => sealSecret(info, aad, p));
 
   const webhooks = await db.school_webhook.findMany({ select: { id: true, school_id: true, secret_enc: true } });
   for (const w of webhooks) {
@@ -121,6 +160,64 @@ export async function reencryptStoredSecrets(
           where: { school_id: r.school_id, provider: r.provider, client_secret_enc: stored },
           data: { client_secret_enc: next },
         }),
+    );
+  }
+
+  // Authenticator secrets: the active one and a pending (being set up) one.
+  const totp = await db.mfa_totp.findMany({
+    where: { OR: [{ secret_enc: { not: null } }, { pending_secret_enc: { not: null } }] },
+    select: { user_id: true, secret_enc: true, pending_secret_enc: true },
+  });
+  for (const r of totp) {
+    const aad = Buffer.from(r.user_id);
+    for (const column of ['secret_enc', 'pending_secret_enc'] as const) {
+      const stored = r[column];
+      if (!stored) continue;
+      await apply(report.mfaSecrets, box(stored, MFA_SECRET_INFO, aad), dryRun, (next) =>
+        db.mfa_totp.updateMany({ where: { user_id: r.user_id, [column]: stored }, data: { [column]: next } }),
+      );
+    }
+  }
+
+  const ai = await db.ai_provider.findMany({ select: { id: true, api_key_enc: true } });
+  for (const r of ai) {
+    const stored = r.api_key_enc;
+    if (!stored) continue;
+    await apply(report.aiProviderKeys, box(stored, AI_KEY_INFO, aiKeyAad(r.id)), dryRun, (next) =>
+      db.ai_provider.updateMany({ where: { id: r.id, api_key_enc: stored }, data: { api_key_enc: next } }),
+    );
+  }
+
+  const translation = await db.translation_setting.findMany({
+    where: { key_enc: { not: null } },
+    select: { id: true, key_enc: true },
+  });
+  for (const r of translation) {
+    const stored = r.key_enc as string;
+    await apply(report.translationKeys, box(stored, TRANSLATION_KEY_INFO, TRANSLATION_KEY_AAD), dryRun, (next) =>
+      db.translation_setting.updateMany({ where: { id: r.id, key_enc: stored }, data: { key_enc: next } }),
+    );
+  }
+
+  const roster = await db.roster_source.findMany({
+    where: { client_secret_enc: { not: null } },
+    select: { id: true, client_secret_enc: true },
+  });
+  for (const r of roster) {
+    const stored = r.client_secret_enc as string;
+    await apply(report.rosterSecrets, box(stored, ROSTER_SECRET_INFO, rosterSecretAad(r.id)), dryRun, (next) =>
+      db.roster_source.updateMany({ where: { id: r.id, client_secret_enc: stored }, data: { client_secret_enc: next } }),
+    );
+  }
+
+  const lti = await db.lti_platform_key.findMany({ select: { kid: true, private_key_sealed: true } });
+  for (const r of lti) {
+    const stored = r.private_key_sealed;
+    await apply(report.ltiPlatformKeys, box(stored, LTI_PLATFORM_KEY_INFO, Buffer.from(r.kid)), dryRun, (next) =>
+      db.lti_platform_key.updateMany({
+        where: { kid: r.kid, private_key_sealed: stored },
+        data: { private_key_sealed: next },
+      }),
     );
   }
   return report;

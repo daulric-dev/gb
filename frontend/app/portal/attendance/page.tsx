@@ -45,11 +45,11 @@ export default function PortalAttendancePage() {
           <Card>
             <CardHeader>
               <CardDescription>Overall attendance</CardDescription>
-              <CardTitle className={cn("text-4xl font-bold tabular-nums", rateColor(s.overall.rate))}>
+              <CardTitle className={cn("text-4xl font-bold tabular-nums", rateColor(s.overall.rate))} translate="no">
                 {formatPercent(s.overall.rate)}
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
+            <CardContent className="text-sm text-muted-foreground" translate={countedSessions(s.overall) === 0 ? undefined : "no"}>
               {countedSessions(s.overall) === 0
                 ? "No sessions recorded yet."
                 : `${s.overall.present} present · ${s.overall.late} late · ${s.overall.absent} absent · ${s.overall.excused} excused`}
@@ -75,11 +75,11 @@ export default function PortalAttendancePage() {
                             {c.courseName}
                             {c.archived && <span className="text-muted-foreground"> (archived)</span>}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-muted-foreground" translate="no">
                             {c.summary.present + c.summary.late} of {countedSessions(c.summary)} sessions attended
                           </p>
                         </div>
-                        <span className={cn("text-sm font-semibold tabular-nums", rateColor(c.summary.rate))}>
+                        <span className={cn("text-sm font-semibold tabular-nums", rateColor(c.summary.rate))} translate="no">
                           {formatPercent(c.summary.rate)}
                         </span>
                         <ChevronRight className="size-4 text-muted-foreground" aria-hidden />

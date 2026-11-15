@@ -315,6 +315,45 @@ describe('SchoolService', () => {
         changes: { status: { before: 'pending', after: 'approved' } },
       });
     });
+
+    test('a custom role granting an explicit-only key gets an entry of its own', async () => {
+      prisma.user_profile.findUnique.mockImplementation(async ({ where }) =>
+        where.id === 'admin' ? { school_id: 's1' } : { account_type: 'staff' },
+      );
+      prisma.school_join_request.findUnique.mockResolvedValue({
+        id: 'req-x',
+        user_id: 'u2',
+        school_id: 's1',
+        status: 'pending',
+      });
+      prisma.school_role.findMany.mockResolvedValue([
+        {
+          id: 'r-dsl',
+          name: 'DSL',
+          school_id: 's1',
+          is_system: false,
+          school_role_permission: [{ permission_catalog: { key: 'pastoral-note:safeguarding' } }],
+        },
+      ] as any);
+      prisma.school_management.findUnique.mockResolvedValue(null);
+      prisma.school_management.create.mockResolvedValue({ id: 'm-x' });
+      prisma.school_join_request.update.mockResolvedValue({ id: 'req-x', status: 'approved' });
+      const auditLog = { record: mock(async () => {}) };
+      const svc = new SchoolService(
+        prisma as any,
+        mockCache as any,
+        createMockErasureLog() as any,
+        {} as any,
+        undefined,
+        auditLog as any,
+      );
+      await svc.approveRequest('admin', 'req-x', 'teacher', ['r-dsl']);
+      const entries = auditLog.record.mock.calls.map((c: any[]) => c[3]);
+      expect(entries.find((e: any) => e.entity === 'school_membership_restricted_permission')).toMatchObject({
+        entityId: 'm-x',
+        changes: { granted: { before: null, after: ['pastoral-note:safeguarding'] }, roles: { after: ['DSL'] } },
+      });
+    });
   });
 
   describe('revokeMemberSessions', () => {

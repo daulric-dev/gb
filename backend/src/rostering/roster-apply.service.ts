@@ -9,6 +9,7 @@ import { permCacheKey } from '@/permission/permission.effective';
 import { RosterClaimService } from './roster-claim.service';
 import type { RosterSettings } from './roster-settings';
 import type { FieldDiff, RosterEntity } from './roster-types';
+import { withLeftAt } from '@/student/student-left-at';
 
 /** A stored roster_change, as the apply reads it. */
 export interface ChangeRow {
@@ -265,7 +266,10 @@ export class RosterApplyService {
         const email = str(data.email);
         let id = change.target_id ?? prior?.target_id ?? null;
         const existing = id
-          ? await tx.student.findFirst({ where: { id, school_id: schoolId }, select: { id: true, user_profile_id: true } })
+          ? await tx.student.findFirst({
+              where: { id, school_id: schoolId },
+              select: { id: true, user_profile_id: true, is_active: true, left_at: true },
+            })
           : null;
         if (existing) {
           const set: Prisma.studentUpdateInput = {};
@@ -274,14 +278,16 @@ export class RosterApplyService {
           if (diff.dateOfBirth) set.date_of_birth = asDate(diff.dateOfBirth.to);
           if (diff.studentNumber) set.student_number = str(diff.studentNumber.to);
           if (diff.isActive?.to === true) set.is_active = true;
-          if (Object.keys(set).length) await tx.student.update({ where: { id: existing.id }, data: set, select: { id: true } });
+          if (Object.keys(set).length) {
+            await tx.student.update({ where: { id: existing.id }, data: withLeftAt(set, existing), select: { id: true } });
+          }
           await this.link(tx, ctx, entity, change.sourced_id, existing.id, schoolId, { email, data: label });
           after.push(() => this.dropStudentCaches(schoolId, existing.user_profile_id));
           if (email && !existing.user_profile_id) after.push(() => this.claims.claimExisting(email));
           return { targetId: existing.id, created: false };
         }
         id = (await tx.student.create({
-          data: {
+          data: withLeftAt({
             school_id: schoolId,
             first_name: str(data.firstName),
             last_name: str(data.lastName),
@@ -289,7 +295,7 @@ export class RosterApplyService {
             student_number: str(data.studentNumber),
             enrollment_date: new Date(new Date().toISOString().slice(0, 10)),
             is_active: true,
-          },
+          }, null),
           select: { id: true },
         })).id;
         await this.link(tx, ctx, entity, change.sourced_id, id, schoolId, { email, data: label });
@@ -409,9 +415,13 @@ export class RosterApplyService {
     let extra: Data = {};
     switch (entity) {
       case 'student': {
-        const s = await tx.student.findUnique({ where: { id: target }, select: { user_profile_id: true, school_id: true } });
+        const s = await tx.student.findUnique({
+          where: { id: target },
+          select: { user_profile_id: true, school_id: true, is_active: true, left_at: true },
+        });
         if (s) {
-          await tx.student.update({ where: { id: target }, data: { is_active: false }, select: { id: true } });
+          // Disabling is the student leaving: starts the retention clock once.
+          await tx.student.update({ where: { id: target }, data: withLeftAt({ is_active: false }, s), select: { id: true } });
           after.push(() => this.dropStudentCaches(s.school_id, s.user_profile_id));
         }
         break;

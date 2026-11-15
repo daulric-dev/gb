@@ -27,7 +27,7 @@ Tests do not use the real client: `src/test/prisma-mock.ts` (`createMockPrisma()
 
 ## Data
 
-Every table. The schema is split one file per Postgres schema in [`prisma/schema/`](../../prisma/schema/README.md) (`public`, `account`, `course`, `grading`, `student`, `file_manager`, `chat`, `compliance`). Migrations live in `backend/prisma/migrations/`; `backend/prisma.config.ts` points Prisma at both.
+Every table. The schema is split one file per Postgres schema in [`prisma/schema/`](../../prisma/schema/README.md) (`public`, `account`, `course`, `grading`, `student`, `file_manager`, `chat`, `compliance`). There are no migration files: `prisma db push` applies the schema and `src/database-setup` adds what Prisma cannot declare (`bun run db:deploy`); `backend/prisma.config.ts` points Prisma at the schema folder.
 
 ## Configuration
 
@@ -35,7 +35,7 @@ Every table. The schema is split one file per Postgres schema in [`prisma/schema
 | --- | --- | --- |
 | `DATABASE_URL` | none (required) | Postgres connection string passed to `PrismaPg`. `prisma generate` alone works without it (see `prisma.config.ts`). |
 
-Useful scripts in `backend/package.json`: `db:generate`, `db:migrate`, `db:deploy`, `db:pull`, `db:studio`. `postinstall`, `pretest` and `build` all run `prisma generate`.
+Useful scripts in `backend/package.json`: `db:generate`, `db:deploy`, `db:prepare`, `db:harden`, `db:release`, `db:pull`, `db:studio` (see [prisma/README.md](../../prisma/README.md)). `postinstall`, `pretest` and `build` all run `prisma generate`.
 
 ## Files
 

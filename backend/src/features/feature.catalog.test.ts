@@ -37,7 +37,7 @@ describe('feature catalog', () => {
       similarity_check: false,
       pastoral_notes: false,
       ai_assistance: false,
-      analytics: true,
+      analytics: false,
       translation: false,
     });
   });
@@ -96,10 +96,11 @@ describe('feature catalog', () => {
     expect(effectiveForSchool(org, ['ai_assistance']).ai_assistance).toBe(false);
   });
 
-  test('analytics is on by default, needs nothing else, and a school can switch it off', () => {
+  test('analytics is off by default, needs nothing else, and a school can switch it off', () => {
     expect(featureDefinition('analytics').requires).toEqual([]);
-    expect(effectiveForOrganisation(organisationSettings({})).analytics).toBe(true);
-    expect(effectiveForSchool(organisationSettings({}), ['analytics']).analytics).toBe(false);
+    expect(effectiveForOrganisation(organisationSettings({})).analytics).toBe(false);
+    expect(effectiveForOrganisation(organisationSettings({ analytics: true })).analytics).toBe(true);
+    expect(effectiveForSchool(organisationSettings({ analytics: true }), ['analytics']).analytics).toBe(false);
     expect(effectiveForSchool(organisationSettings({ analytics: false }), []).analytics).toBe(false);
   });
 

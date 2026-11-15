@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import { safeWebhookFetch, sendWebhook, signWebhook, USER_AGENT, webhookHeaders } from './webhook-sender';
 
 const REQ = {
-  url: 'http://10.0.0.5:8080/hooks',
+  url: 'https://10.0.0.5:8080/hooks',
   secret: 'whsec_test',
   deliveryId: 'd-1',
   eventId: 'e-1',
@@ -66,6 +66,23 @@ describe('signing and headers', () => {
 });
 
 describe('sendWebhook', () => {
+  test('refuses plain http before any request unless WEBHOOK_ALLOW_PRIVATE=true', async () => {
+    const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    try {
+      const fetchImpl = mock(async () => new Response('ok'));
+      const result = await sendWebhook({ ...REQ, url: 'http://sis.example/hooks' }, fetchImpl);
+      expect(result).toMatchObject({ ok: false, refused: 'plain_http', statusCode: null });
+      expect(result.error).toContain('plain http');
+      expect(fetchImpl).not.toHaveBeenCalled();
+      process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
+      expect((await sendWebhook({ ...REQ, url: 'http://sis.example/hooks' }, fetchImpl)).ok).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+      else process.env.WEBHOOK_ALLOW_PRIVATE = previous;
+    }
+  });
+
   test('blocks private webhook destinations by default', async () => {
     const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
     delete process.env.WEBHOOK_ALLOW_PRIVATE;

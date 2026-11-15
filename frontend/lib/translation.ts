@@ -3,10 +3,13 @@ import { api } from "@/lib/api";
 /**
  * Live machine translation of the web app (site text and course content).
  *
- * The backend wraps a translation engine the organisation picks (Google,
- * DeepL, LibreTranslate or Yandex). Nothing is sent anywhere until someone
- * picks a language other than English in the header; the choice is kept per
- * browser. The DOM side lives in `lib/page-translator.ts`.
+ * The backend wraps a translation engine the organisation picks (a
+ * self-hosted LibreTranslate or DeepL; Google and Yandex only where the
+ * server allows engines without a data-processing agreement). Nothing is
+ * sent anywhere until someone picks a language other than English, either
+ * in the header or by accepting the one-time "Translate GradeBook into…?"
+ * prompt; the answer (a "no" included) is kept per browser. The DOM side,
+ * including what is never sent, lives in `lib/page-translator.ts`.
  */
 
 // ── Languages ────────────────────────────────────────────────────────────────
@@ -78,22 +81,49 @@ export function deviceLanguage(languages?: readonly string[] | null): LanguageCo
   return null;
 }
 
-/**
- * The language to show: the choice made in this browser, else the device's
- * language, else English. Read on the device only; nothing is fetched.
- */
-export function readStoredLanguage(storage?: Storage | null, languages?: readonly string[] | null): LanguageCode {
+/** The choice made in this browser, or null when none was made (or storage is blocked). */
+export function readLanguageChoice(storage?: Storage | null): LanguageCode | null {
   try {
     const s = storage === undefined ? globalThis.localStorage : storage;
     const v = s?.getItem(LANGUAGE_STORAGE_KEY);
     if (isLanguageCode(v)) return v;
   } catch {
-    // Blocked storage: fall back to the device language.
+    // Blocked storage: no choice.
   }
-  return deviceLanguage(languages) ?? DEFAULT_LANGUAGE;
+  return null;
 }
 
-/** Remembers the choice in this browser (English too, so it wins over the device language). */
+/**
+ * The language to show: the choice made in this browser, else English.
+ * The device language is never used on its own (that would send page text
+ * to the translation engine without anyone agreeing): it is only offered
+ * once, see `languageToOffer`.
+ */
+export function readStoredLanguage(storage?: Storage | null): LanguageCode {
+  return readLanguageChoice(storage) ?? DEFAULT_LANGUAGE;
+}
+
+/**
+ * The device language to offer in the one-time prompt: only when no choice
+ * (not even "English") is stored and the device prefers a supported
+ * language other than English. Null otherwise.
+ */
+export function languageToOffer(
+  storage?: Storage | null,
+  languages?: readonly string[] | null,
+): LanguageCode | null {
+  try {
+    const s = storage === undefined ? globalThis.localStorage : storage;
+    // Blocked storage cannot keep an answer: never ask (it would ask on every page).
+    if (!s || s.getItem(LANGUAGE_STORAGE_KEY) !== null) return null;
+  } catch {
+    return null;
+  }
+  const device = deviceLanguage(languages);
+  return device && device !== DEFAULT_LANGUAGE ? device : null;
+}
+
+/** Remembers the choice in this browser (English too: "no thanks" is a choice, and the prompt is not shown again). */
 export function storeLanguage(code: LanguageCode, storage?: Storage | null): void {
   try {
     const s = storage === undefined ? globalThis.localStorage : storage;
@@ -223,6 +253,11 @@ export class TranslationCache {
     return m;
   }
 
+  /** Empties the in-memory copy (the stored copy is removed by `clearTranslationCache`). */
+  clear(): void {
+    this.maps.clear();
+  }
+
   get(lang: string, text: string): string | undefined {
     return this.map(lang).get(text);
   }
@@ -272,45 +307,101 @@ function safeSessionStorage(): Storage | null {
   }
 }
 
+let shared: TranslationCache | null = null;
+
+/** The cache the page translator uses in this tab (one per tab, so sign-out can empty it). */
+export function sharedTranslationCache(): TranslationCache {
+  shared ??= new TranslationCache();
+  return shared;
+}
+
+/**
+ * Forgets every cached translation in this tab: the in-memory cache and the
+ * `gb_translation_cache:*` sessionStorage entries (they hold text from pages
+ * the signed-in user viewed). Run on sign-out. The language choice
+ * (`gb_language`) is a preference and stays.
+ */
+export function clearTranslationCache(storage: Storage | null = safeSessionStorage()): void {
+  shared?.clear();
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k?.startsWith(CACHE_STORAGE_PREFIX)) keys.push(k);
+    }
+    for (const k of keys) storage.removeItem(k);
+  } catch {
+    // Blocked storage: nothing was stored.
+  }
+}
+
 // ── API ──────────────────────────────────────────────────────────────────────
 
 export interface TranslationStatus {
   enabled: boolean;
+  /** The engine's display name ("DeepL", "LibreTranslate (your school's server)"), for the consent prompt. */
+  engine?: string | null;
 }
 
 export const TRANSLATION_ENGINES = ["google", "deepl", "libre", "yandex"] as const;
 export type TranslationEngine = (typeof TRANSLATION_ENGINES)[number];
 
-export const ENGINE_INFO: Record<
-  TranslationEngine,
-  { label: string; description: string; needsKey: boolean; keyOptional?: boolean; needsUrl: boolean }
-> = {
-  google: {
-    label: "Google",
-    description:
-      "No key needed. Uses Google's unofficial public endpoint, which can stop working or be rate limited at any time. Text is sent to Google.",
-    needsKey: false,
-    needsUrl: false,
-  },
-  deepl: {
-    label: "DeepL",
-    description: "Needs a DeepL API key (free or pro). Text is sent to DeepL.",
-    needsKey: true,
-    needsUrl: false,
-  },
+export interface EngineInfo {
+  label: string;
+  description: string;
+  /** Where the text goes and what agreement covers it: shown as a warning. */
+  transfer: string;
+  needsKey: boolean;
+  keyOptional?: boolean;
+  needsUrl: boolean;
+  /**
+   * No data-processing agreement is possible (or none is in place by
+   * default): hidden and refused unless the server sets
+   * TRANSLATION_ALLOW_UNCONTRACTED_ENGINES=true.
+   */
+  uncontracted: boolean;
+}
+
+export const ENGINE_INFO: Record<TranslationEngine, EngineInfo> = {
   libre: {
     label: "LibreTranslate",
     description:
-      "Open source and can be self-hosted, so text never leaves your network. Needs the server's URL; a key only if the server requires one.",
+      "Open source. Recommended: run it on your own server so page text never leaves your network. Needs the server's address; a key only if the server requires one.",
+    transfer:
+      "Self-hosted: text stays on your server. If you point it at someone else's LibreTranslate server instead, text is sent to that operator and you need an agreement with them.",
     needsKey: false,
     keyOptional: true,
     needsUrl: true,
+    uncontracted: false,
+  },
+  deepl: {
+    label: "DeepL",
+    description: "Needs a DeepL API key (Pro recommended; Free keys may let DeepL keep text to improve its service).",
+    transfer:
+      "Text is sent to DeepL SE (Germany, EU). Sign DeepL's data processing agreement before turning it on, and list DeepL as a sub-processor in your privacy notice.",
+    needsKey: true,
+    needsUrl: false,
+    uncontracted: false,
+  },
+  google: {
+    label: "Google (unofficial)",
+    description:
+      "No key needed. Uses Google's unofficial public endpoint, which can stop working or be rate limited at any time.",
+    transfer:
+      "Text is sent to Google in the United States through an endpoint with no contract or data processing agreement. Not suitable for pupils' or staff personal data; only for trying translation out.",
+    needsKey: false,
+    needsUrl: false,
+    uncontracted: true,
   },
   yandex: {
     label: "Yandex",
-    description: "Needs a Yandex Translate API key. Text is sent to Yandex.",
+    description: "Needs a Yandex Translate API key (sent in the request address, as Yandex's API requires).",
+    transfer:
+      "Text is sent to Yandex in Russia. Russia has no EU adequacy decision and Yandex offers no standard contractual clauses for this API: do not use it for personal data.",
     needsKey: true,
     needsUrl: false,
+    uncontracted: true,
   },
 };
 
@@ -322,6 +413,10 @@ export interface OrgTranslationSettings {
   allowPrivateNetwork: boolean;
   enabled: boolean;
   updatedAt: string | null;
+  /** The server allows Google and Yandex (TRANSLATION_ALLOW_UNCONTRACTED_ENGINES=true). Missing on older servers: treat as false. */
+  uncontractedEnginesAllowed?: boolean;
+  /** The saved engine is Google or Yandex and the server does not allow them: translation is off. */
+  engineBlocked?: boolean;
 }
 
 export interface OrgTranslationUpdate {

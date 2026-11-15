@@ -11,6 +11,8 @@ import {
   GraduationCap,
   ShieldCheck,
   ChevronRight,
+  Lock,
+  Download,
   type LucideProps,
 } from "lucide-react-native";
 import type { ComponentType } from "react";
@@ -21,6 +23,7 @@ import type { FeatureKey } from "@/lib/features";
 import { Screen } from "@/components/layout/Screen";
 import { Card } from "@/components/ui/Card";
 import { Text } from "@/components/ui/Text";
+import { openDataDownload, openPrivacyNotice } from "@/lib/privacy-link";
 
 interface MenuItem {
   // String path; cast to Href at navigation time. The typed-route union is
@@ -138,6 +141,49 @@ export default function MoreScreen() {
             </Pressable>
           );
         })}
+        <Pressable
+          onPress={openPrivacyNotice}
+          accessibilityRole="link"
+          accessibilityLabel="Privacy notice: how your data is used"
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        >
+          <Card>
+            <View style={styles.row}>
+              <View style={[styles.iconWrap, { backgroundColor: colors.muted }]}>
+                <Lock size={20} color={colors.foreground} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text weight="600">Privacy notice</Text>
+                <Text variant="muted" style={{ marginTop: 1, fontSize: 13 }}>
+                  How your data is used, and your rights
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.mutedForeground} />
+            </View>
+          </Card>
+        </Pressable>
+        {/* Asked for and downloaded on the web: it needs "Confirm it's you". */}
+        <Pressable
+          onPress={() => openDataDownload("staff")}
+          accessibilityRole="link"
+          accessibilityLabel="Download my data: opens the website"
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        >
+          <Card>
+            <View style={styles.row}>
+              <View style={[styles.iconWrap, { backgroundColor: colors.muted }]}>
+                <Download size={20} color={colors.foreground} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text weight="600">Download my data</Text>
+                <Text variant="muted" style={{ marginTop: 1, fontSize: 13 }}>
+                  A copy of everything about your account (opens the website)
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.mutedForeground} />
+            </View>
+          </Card>
+        </Pressable>
       </View>
     </Screen>
   );

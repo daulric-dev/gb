@@ -84,7 +84,7 @@ The routes for changing features live with their owners: `GET`/`PATCH /api/organ
 ## Data
 
 - `public.organisation.features` (`jsonb`, not null, default `{}`, CHECK it is an object).
-- `public.school.disabled_features` (`text[]`, not null, default `{}`).
+- `public.school_feature_disabled` (one row per school and disabled feature key).
 
 Migration `20261102120000_features`.
 

@@ -78,7 +78,9 @@ export function LanguagePicker() {
         <DropdownMenuSeparator />
         <p className="px-2 py-1.5 text-xs text-muted-foreground">
           Machine translated, so it may contain mistakes. The text on each page you view is sent to
-          your school&rsquo;s translation service.
+          your school&rsquo;s translation service. Messages and pastoral notes are never sent;
+          names, marks and feedback are left out where GradeBook lists them (not when written
+          inside course content).
         </p>
       </DropdownMenuContent>
     </DropdownMenu>

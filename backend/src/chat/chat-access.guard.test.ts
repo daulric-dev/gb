@@ -37,7 +37,7 @@ function setup(opts: {
   prisma.organisation.findFirst.mockResolvedValue({
     features: { student_messaging: !!opts.studentMessaging },
   });
-  prisma.school.findUnique.mockResolvedValue({ disabled_features: [] });
+  prisma.school.findUnique.mockResolvedValue({ disabled_feature_rows: [] });
   prisma.school_management.findUnique.mockResolvedValue(
     opts.staffRole ? { role: opts.staffRole, school_management_role: [] } : null,
   );

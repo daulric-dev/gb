@@ -110,9 +110,9 @@ Cut-over (done):
 
 What changed:
 
-- **Schema history**: `backend/prisma/migrations/0_baseline` is the whole schema, generated from the old database with row-level security, policies and the hosted service's `auth`/`storage` references removed. Future changes go through Prisma Migrate (`bun run db:migrate --name <change>`; deploy with `bun run db:deploy`); see `backend/prisma/schema/README.md`. The 58 Supabase SQL migrations and `supabase/` (config, email templates, branches) were deleted; they remain in git history (`git show 13b14d1:supabase/migrations`).
+- **Schema history** (at the time; migrations were later replaced by `prisma db push` and `backend/src/database-setup`): `backend/prisma/migrations/0_baseline` was the whole schema, generated from the old database with row-level security, policies and the hosted service's `auth`/`storage` references removed. Future changes go through Prisma Migrate (`bun run db:migrate --name <change>`; deploy with `bun run db:deploy`); see `backend/prisma/schema/README.md`. The 58 Supabase SQL migrations and `supabase/` (config, email templates, branches) were deleted; they remain in git history (`git show 13b14d1:supabase/migrations`).
 - **Local development**: `docker-compose.dev.yml` runs Postgres (`db`), Redis, SeaweedFS (`s3`) and Mailpit. `bun run preload` starts them, waits for them to be healthy and runs `prisma migrate deploy` (`bun run db:setup`); `bun run postload` stops them. Root scripts `db:migrate`, `db:deploy`, `db:pull`, `db:studio`, `seed:demo` and `smoke` delegate to the backend. The Supabase CLI is no longer used anywhere.
-- **Production image**: `infrastructure/Dockerfile` generates the Prisma client at build (no database needed) and runs `prisma migrate deploy` before starting the API, unless `MIGRATE_ON_START=false` (then `docker compose --profile release run --rm migrate` is the release step). `infrastructure/docker-compose.yml` has a commented `db` service for single-box deployments.
+- **Production image**: `infrastructure/Dockerfile` generates the Prisma client at build (no database needed) and runs `prisma migrate deploy` (since replaced by `bun run db:release`: `prisma db push` plus `src/database-setup`) before starting the API, unless `MIGRATE_ON_START=false` (then `docker compose --profile release run --rm migrate` is the release step). `infrastructure/docker-compose.yml` has a commented `db` service for single-box deployments.
 - **CI**: no database and no Supabase step. Backend tests are unit tests with mocks, and `prisma generate` uses a placeholder `DATABASE_URL` when none is set (`prisma.config.ts`), so `bun install` works anywhere.
 - **Legacy data dropped**: the product had no real users, so no data was carried over. The class/subject/report-card tables and columns, the old auth tables and the copy tooling were removed, and `0_baseline` was regenerated from the cleaned schema (44 tables).
 
@@ -122,7 +122,7 @@ There is no data to move: deploy the new stack fresh.
 
 1. Provision Postgres, an S3 bucket (with the CORS rule above), SMTP and Redis.
 2. Set the variables from `infrastructure/env.example`.
-3. Start the image; it runs `prisma migrate deploy` before the API starts (or run the `migrate` release step).
+3. Start the image; it brings the schema up to date before the API starts (`bun run db:release`; or run the `migrate` release step).
 4. Point `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_STORAGE_URL` and the mobile `EXPO_PUBLIC_API_URL` at it.
 5. Sign in by email code, create a school and a course, upload a file.
 

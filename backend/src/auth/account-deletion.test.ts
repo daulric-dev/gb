@@ -311,33 +311,3 @@ describe('GET /auth/account/deletion-check', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, handler)).toContain(AuthGuard);
   });
 });
-
-describe('migration 20261123100000_account_ownership', () => {
-  const sql = readFileSync(
-    join(
-      __dirname,
-      '../../prisma/migrations/20261123100000_account_ownership/migration.sql',
-    ),
-    'utf8',
-  );
-  const code = sql
-    .split('\n')
-    .filter((l) => !l.trim().startsWith('--'))
-    .join('\n');
-
-  test('adds organisation.owner_id with a Restrict key to user_profile', () => {
-    expect(code).toMatch(/ALTER TABLE public\.organisation ADD COLUMN owner_id uuid;/);
-    expect(code).toMatch(
-      /FOREIGN KEY \(owner_id\) REFERENCES public\.user_profile\(id\)\s+ON DELETE RESTRICT/,
-    );
-  });
-
-  test('backfills the earliest organisation admin, self-added first on ties', () => {
-    expect(code).toMatch(/UPDATE public\.organisation o\s+SET owner_id = \(/);
-    expect(code).toMatch(/FROM public\.organisation_admin a/);
-    expect(code).toMatch(
-      /ORDER BY a\.created_at ASC,\s+\(a\.created_by IS NULL OR a\.created_by = a\.user_id\) DESC,\s+a\.user_id ASC\s+LIMIT 1/,
-    );
-    expect(code).toMatch(/WHERE o\.owner_id IS NULL;/);
-  });
-});

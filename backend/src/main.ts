@@ -1,8 +1,9 @@
 import { createApp } from './createApp.js';
-import { validateStartupConfig } from './config/startup.js';
+import { startupWarnings, validateStartupConfig } from './config/startup.js';
 
 async function bootstrap() {
   validateStartupConfig();
+  for (const warning of startupWarnings()) console.warn(`[startup] ${warning}`);
   const app = await createApp();
   app.enableShutdownHooks();
   await app.listen(process.env.PORT || 3001, '0.0.0.0');
