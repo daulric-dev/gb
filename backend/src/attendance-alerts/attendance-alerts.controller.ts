@@ -184,13 +184,13 @@ export class AttendanceAlertController {
     await this.alerts.acknowledge(req.user.id as string, alertId);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get('settings')
   async settings(@Req() req: any) {
     return this.alerts.settings(await this.school(req));
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Put('settings')
   async updateSettings(@Req() req: any, @Body() dto: AlertSettingsDto) {
     return this.alerts.updateSettings(req.user.id as string, await this.school(req), dto);
@@ -200,7 +200,7 @@ export class AttendanceAlertController {
    * Every active student of the school with their tutor: student:update
    * (the guard) and student:read-all, since it lists the whole school.
    */
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Get('form-tutors')
   async formTutors(@Req() req: any) {
     const schoolId = await this.school(req);
@@ -211,7 +211,7 @@ export class AttendanceAlertController {
     return this.alerts.formTutors(schoolId);
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Put('form-tutors')
   async setFormTutor(@Req() req: any, @Body() dto: FormTutorDto) {
     return this.alerts.setFormTutor(await this.school(req), dto.studentIds, dto.tutorId);

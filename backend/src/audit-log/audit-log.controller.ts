@@ -32,7 +32,7 @@ export class SchoolAuditLogController {
     private readonly prisma: PrismaService,
   ) {}
 
-  @RequirePermission('audit-log', 'read')
+  @RequirePermission('audit-log', 'read', 'active')
   @QueryMethod('current/audit-log')
   async list(@Req() req: Req, @Body() dto: ListAuditLogDto) {
     const schoolId = await userSchoolId(this.prisma, req.user.id);

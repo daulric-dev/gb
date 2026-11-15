@@ -102,13 +102,20 @@ describe('OneRosterClient', () => {
 
   test('SSRF guard: private, loopback and link-local destinations are refused before any request', async () => {
     delete process.env.WEBHOOK_ALLOW_PRIVATE;
-    for (const host of ['127.0.0.1', '10.0.0.5', '169.254.169.254', '[::1]']) {
+    const refusals: [string, string][] = [
+      ['127.0.0.1', 'private or reserved address'],
+      ['10.0.0.5', 'private or reserved address'],
+      ['[::1]', 'private or reserved address'],
+      // Link-local is refused on its own terms: no setting reaches it.
+      ['169.254.169.254', 'link-local or metadata address'],
+    ];
+    for (const [host, message] of refusals) {
       const client = new OneRosterClient(
         { ...CONFIG, baseUrl: `https://${host}/ims/oneroster/rostering/v1p2`, tokenUrl: `https://${host}/token` },
         { sleep: async () => {}, minIntervalMs: 0 }, // the real, guarded transport
       );
       const err = await rejected(client.accessToken());
-      expect(err.message).toContain('private or reserved address');
+      expect(err.message).toContain(message);
     }
   });
 

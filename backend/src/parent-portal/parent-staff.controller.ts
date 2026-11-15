@@ -43,13 +43,13 @@ interface StaffRequest {
 export class StudentParentsController {
   constructor(private readonly links: ParentLinkService) {}
 
-  @RequirePermission('student', 'read')
+  @RequirePermission('student', 'read', 'active')
   @Get()
   list(@Req() req: StaffRequest, @Param('studentId', ParseUUIDPipe) studentId: string) {
     return this.links.listForStudent(req.user.id, studentId);
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Post('invites')
   invite(
     @Req() req: StaffRequest,
@@ -59,7 +59,7 @@ export class StudentParentsController {
     return this.links.invite(req.user.id, studentId, dto);
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Post('link-codes')
   linkCode(
     @Req() req: StaffRequest,
@@ -69,7 +69,7 @@ export class StudentParentsController {
     return this.links.createLinkCode(req.user.id, studentId, dto);
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Delete('invites/:inviteId')
   revokeInvite(
     @Req() req: StaffRequest,
@@ -79,7 +79,7 @@ export class StudentParentsController {
     return this.links.revokeInvite(req.user.id, studentId, inviteId);
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Delete(':linkId')
   remove(
     @Req() req: StaffRequest,
@@ -110,7 +110,7 @@ export class ParentSettingsController {
     return schoolId;
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get()
   async get(@Req() req: StaffRequest) {
     const schoolId = await this.school(req.user.id);
@@ -121,7 +121,7 @@ export class ParentSettingsController {
     return parseParentSettings(row?.parent_settings);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Patch()
   async update(@Req() req: StaffRequest, @Body() dto: UpdateParentSettingsDto) {
     const schoolId = await this.school(req.user.id);

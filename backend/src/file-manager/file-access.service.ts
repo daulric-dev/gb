@@ -5,6 +5,12 @@ import { PrismaService } from '@/prisma/prisma.service';
 /** The principals a user matches when resolving shares in a given school. */
 export interface UserPrincipals {
   userId: string;
+  /**
+   * The school these principals were resolved in. Every share lookup filters
+   * on it: a share row names a principal id, and the same user id or role id
+   * must not reach a file through a row belonging to another school.
+   */
+  schoolId: string;
   roleIds: string[];
   /** Courses the user is on as staff, or (through their student record) as an active student. */
   courseIds: string[];
@@ -113,7 +119,7 @@ export class FileAccessService {
       !!membership?.id,
     );
 
-    return { userId, roleIds, courseIds };
+    return { userId, schoolId, roleIds, courseIds };
   }
 
   private async bestShare(
@@ -121,7 +127,7 @@ export class FileAccessService {
     principals: UserPrincipals,
   ): Promise<{ canDownload: boolean } | null> {
     const shares = await this.prisma.file_share.findMany({
-      where: { file_id: fileId },
+      where: { file_id: fileId, school_id: principals.schoolId },
       select: { principal_type: true, principal_id: true, can_download: true },
     });
 
@@ -167,7 +173,7 @@ export class FileAccessService {
 
   async sharedFileIdsFor(
     principals: UserPrincipals,
-    schoolId: string,
+    schoolId: string = principals.schoolId,
   ): Promise<string[]> {
     const or: Prisma.file_shareWhereInput[] = [
       { principal_type: 'user', principal_id: principals.userId },
@@ -207,7 +213,7 @@ export class FileAccessService {
     if (fileIds.length === 0) return flags;
 
     const shares = await this.prisma.file_share.findMany({
-      where: { file_id: { in: fileIds } },
+      where: { file_id: { in: fileIds }, school_id: principals.schoolId },
       select: {
         file_id: true,
         principal_type: true,

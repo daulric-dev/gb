@@ -204,10 +204,19 @@ describe('custom OpenID Connect: settings', () => {
         : [{ address: '93.184.216.34', family: 4 }],
     );
     const a = new CustomOidcAdapter(undefined, dns);
-    for (const issuer of ['https://10.1.2.3', 'https://127.0.0.1:8443/realms/x', 'https://metadata.evil.test', 'https://[::1]']) {
+    for (const issuer of ['https://10.1.2.3', 'https://127.0.0.1:8443/realms/x', 'https://[::1]']) {
       await expect(a.checkSettings({ issuer }, true)).rejects.toThrow('private or reserved');
       await expect(a.checkSettings({ issuer, allowPrivateNetwork: 'true' }, true)).resolves.toBeUndefined();
     }
+    // The private-network switch lets a school reach its own servers. It does
+    // not reach instance metadata, which would hand this host's cloud
+    // credentials to whoever set the issuer.
+    await expect(a.checkSettings({ issuer: 'https://metadata.evil.test' }, true)).rejects.toThrow(
+      'link-local or cloud metadata',
+    );
+    await expect(
+      a.checkSettings({ issuer: 'https://metadata.evil.test', allowPrivateNetwork: 'true' }, true),
+    ).rejects.toThrow('link-local or cloud metadata');
     await expect(a.checkSettings({ issuer: 'https://id.example.edu' }, true)).resolves.toBeUndefined();
     // http only on the private network.
     await expect(a.checkSettings({ issuer: 'http://id.example.edu' }, true)).rejects.toThrow('https');

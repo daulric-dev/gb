@@ -9,6 +9,7 @@ type StartupEnvironment = {
   FRONTEND_URL?: string;
   LOCAL_PREVIEW?: string;
   DATA_ENCRYPTION_KEY?: string;
+  AUTH_COOKIE_SECURE?: string;
 };
 
 /** Hosts a production build may be served from over plain http (local runs). */
@@ -117,6 +118,16 @@ export function validateStartupConfig(
   if (env.NODE_ENV === 'production') {
     validateApiUrl(env.API_URL);
     validateFrontendUrl(env.FRONTEND_URL, env.LOCAL_PREVIEW === 'true');
+    // The override exists so a production build can be run locally over plain
+    // http (`bun run preview`), where native clients drop Secure cookies. On a
+    // real deployment it would send the session cookie in clear text, so it is
+    // refused rather than warned about.
+    if (env.AUTH_COOKIE_SECURE === 'false' && env.LOCAL_PREVIEW !== 'true') {
+      throw new Error(
+        'AUTH_COOKIE_SECURE=false is not allowed in production: session cookies would be sent over plain HTTP. ' +
+          'Remove it, or set LOCAL_PREVIEW=true for a production build run on this machine.',
+      );
+    }
   }
 
   if (env.USE_REDIS === 'true') {

@@ -23,6 +23,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { AuthGuard } from '@/auth/auth.guard';
+import { Public } from '@/auth/public.decorator';
 import { SsoService } from './sso.service';
 
 class DiscoverQueryDto {
@@ -61,6 +62,7 @@ export class SsoController {
    * Login buttons usable without knowing the school (install-wide env apps).
    * A school's own providers come from `discover` once the email is known.
    */
+  @Public()
   @Get('providers')
   providers() {
     return this.sso.providers();
@@ -68,12 +70,14 @@ export class SsoController {
 
   /** Whether an address's school has its own provider, and requires it. */
   @Throttle({ 'auth-ip': { limit: 300, ttl: 60 * 60 * 1000 } })
+  @Public()
   @Get('discover')
   async discover(@Query() query: DiscoverQueryDto) {
     return this.sso.discover(query.email);
   }
 
   /** Our SAML service provider metadata, for schools to give their IdP. */
+  @Public()
   @Get('saml/metadata')
   samlMetadata(@Res() reply: FastifyReply) {
     const xml = this.sso.samlMetadata();
@@ -89,6 +93,7 @@ export class SsoController {
    * (application/x-www-form-urlencoded, SAMLResponse + RelayState).
    */
   @Throttle({ 'auth-ip': { limit: 120, ttl: 60 * 60 * 1000 } })
+  @Public()
   @Post('saml/acs')
   async samlAcs(
     @Res() reply: FastifyReply,
@@ -100,6 +105,7 @@ export class SsoController {
   }
 
   @Throttle({ 'auth-ip': { limit: 120, ttl: 60 * 60 * 1000 } })
+  @Public()
   @Get(':provider/start')
   async start(
     @Req() req: FastifyRequest,
@@ -111,6 +117,7 @@ export class SsoController {
     return reply.redirect(url, 302);
   }
 
+  @Public()
   @Get('callback')
   async callback(
     @Req() req: FastifyRequest,
@@ -126,6 +133,7 @@ export class SsoController {
    * challenge it started with, for a session.
    */
   @Throttle({ 'auth-ip': { limit: 60, ttl: 60 * 60 * 1000 } })
+  @Public()
   @Post('handoff')
   @HttpCode(204)
   async handoff(

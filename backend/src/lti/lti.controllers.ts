@@ -21,6 +21,7 @@ import { ApiBearerAuth, ApiExcludeController, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { Public } from '@/auth/public.decorator';
 import { RequireStepUp } from '@/auth/step-up.guard';
 import { FeatureGuard } from '@/features/feature.guard';
 import { FeatureService } from '@/features/feature.service';
@@ -199,6 +200,13 @@ export class LtiCourseController {
  * authentication endpoint (GET or a cross-site form POST, the one CSRF
  * exemption, see common/csrf.ts) and the AGS token endpoint.
  */
+/**
+ * Public to AuthGuard: a tool calls these without a GradeBook session.
+ * `authGet`/`authPost` read a session cookie when the browser sends one, but
+ * a launch is authorised by its own single-use ticket, and `token` by the
+ * tool's signed client assertion.
+ */
+@Public()
 @ApiTags('LTI')
 @Controller('lti')
 export class LtiPublicController {
@@ -298,6 +306,8 @@ export class LtiAgsGuard implements CanActivate {
 type AgsReq = { ltiTool: AgsCaller };
 
 /** Assignment and Grade Services (line items, scores, results) for tools. */
+/** Public to AuthGuard: LtiAgsGuard authenticates with the tool's bearer token. */
+@Public()
 @ApiExcludeController()
 @UseGuards(LtiAgsGuard)
 @Controller('lti/ags/courses/:courseId/lineitems')

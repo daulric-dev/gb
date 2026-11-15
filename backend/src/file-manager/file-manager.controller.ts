@@ -49,7 +49,7 @@ export class FileManagerController {
   ) {}
 
   /** QUERY /files: `filter` and paging in the JSON body. */
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @QueryMethod()
   async list(@Req() req: any, @Body() query: ListFilesQueryDto) {
     const userId: string = req.user.id;
@@ -64,7 +64,7 @@ export class FileManagerController {
    * `uploadUrl` with the returned headers, then calls the complete endpoint
    * below.
    */
-  @RequirePermission('file', 'create')
+  @RequirePermission('file', 'create', 'active')
   @Post('upload-ticket')
   async createUploadTicket(
     @Req() req: any,
@@ -75,7 +75,7 @@ export class FileManagerController {
   }
 
   /** Check the uploaded bytes and release the file for use. */
-  @RequirePermission('file', 'create')
+  @RequirePermission('file', 'create', 'active')
   @Post('upload-ticket/:fileId/complete')
   async finaliseUpload(@Req() req: any, @Param('fileId') fileId: string) {
     const userId: string = req.user.id;
@@ -84,7 +84,7 @@ export class FileManagerController {
 
   // ── Folders (declared before :id so the literal path wins) ────────────────
 
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @RequireFeature('files')
   @QueryMethod('folders/contents')
   async browseFolder(@Req() req: any, @Body() query: BrowseFolderQueryDto) {
@@ -92,7 +92,7 @@ export class FileManagerController {
     return this.files.browseFolder(userId, query.folderId ?? null);
   }
 
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @RequireFeature('files')
   @Get('folders')
   async listFolders(@Req() req: any) {
@@ -100,7 +100,7 @@ export class FileManagerController {
     return this.folders.listAll(userId);
   }
 
-  @RequirePermission('file', 'create')
+  @RequirePermission('file', 'create', 'active')
   @RequireFeature('files')
   @Post('folders')
   async createFolder(@Req() req: any, @Body() dto: CreateFolderDto) {
@@ -108,7 +108,7 @@ export class FileManagerController {
     return this.folders.create(userId, dto.name, dto.parentId ?? null);
   }
 
-  @RequirePermission('file', 'update')
+  @RequirePermission('file', 'update', 'active')
   @RequireFeature('files')
   @Patch('folders/:folderId')
   async renameFolder(
@@ -121,7 +121,7 @@ export class FileManagerController {
   }
 
   /** Re-parent a folder (drag a folder into another folder, or to the root). */
-  @RequirePermission('file', 'update')
+  @RequirePermission('file', 'update', 'active')
   @RequireFeature('files')
   @Patch('folders/:folderId/move')
   async moveFolder(
@@ -133,7 +133,7 @@ export class FileManagerController {
     return this.folders.move(userId, folderId, dto.parentId);
   }
 
-  @RequirePermission('file', 'delete')
+  @RequirePermission('file', 'delete', 'active')
   @RequireFeature('files')
   @Delete('folders/:folderId')
   async deleteFolder(@Req() req: any, @Param('folderId') folderId: string) {
@@ -143,7 +143,7 @@ export class FileManagerController {
 
   // ── Notifications (declared before :id so the literal path wins) ──────────
 
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @RequireFeature('files')
   @Get('notifications')
   async listNotifications(@Req() req: any) {
@@ -151,7 +151,7 @@ export class FileManagerController {
     return this.notifications.list(userId);
   }
 
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @RequireFeature('files')
   @Get('notifications/unread-count')
   async unreadNotifications(@Req() req: any) {
@@ -159,7 +159,7 @@ export class FileManagerController {
     return this.notifications.unreadCount(userId);
   }
 
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @RequireFeature('files')
   @Post('notifications/mark-read')
   async markNotificationsRead(@Req() req: any) {
@@ -167,14 +167,14 @@ export class FileManagerController {
     return this.notifications.markAllRead(userId);
   }
 
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @Get(':id')
   async metadata(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
     return this.files.getMetadata(userId, id);
   }
 
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @Get(':id/content')
   async view(
     @Req() req: any,
@@ -202,7 +202,7 @@ export class FileManagerController {
   }
 
   /** Download — only for the owner or a recipient with download rights. */
-  @RequirePermission('file', 'read')
+  @RequirePermission('file', 'read', 'active')
   @Get(':id/download')
   async download(
     @Req() req: any,
@@ -227,7 +227,7 @@ export class FileManagerController {
       .send(body);
   }
 
-  @RequirePermission('file', 'update')
+  @RequirePermission('file', 'update', 'active')
   @Patch(':id')
   async rename(
     @Req() req: any,
@@ -239,7 +239,7 @@ export class FileManagerController {
   }
 
   /** Move a file into a folder (or to the root with `folderId: null`). */
-  @RequirePermission('file', 'update')
+  @RequirePermission('file', 'update', 'active')
   @RequireFeature('files')
   @Patch(':id/move')
   async move(
@@ -251,7 +251,7 @@ export class FileManagerController {
     return this.files.move(userId, id, dto.folderId);
   }
 
-  @RequirePermission('file', 'delete')
+  @RequirePermission('file', 'delete', 'active')
   @Delete(':id')
   async remove(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
@@ -260,7 +260,7 @@ export class FileManagerController {
 
   // ── Shares (owner only; ownership enforced in the service) ─────────────────
 
-  @RequirePermission('file', 'update')
+  @RequirePermission('file', 'update', 'active')
   @RequireFeature('files')
   @Get(':id/shares')
   async listShares(@Req() req: any, @Param('id') id: string) {
@@ -268,7 +268,7 @@ export class FileManagerController {
     return this.files.listShares(userId, id);
   }
 
-  @RequirePermission('file', 'update')
+  @RequirePermission('file', 'update', 'active')
   @RequireFeature('files')
   @Post(':id/shares')
   async share(
@@ -280,7 +280,7 @@ export class FileManagerController {
     return this.files.share(userId, id, dto.shares);
   }
 
-  @RequirePermission('file', 'update')
+  @RequirePermission('file', 'update', 'active')
   @RequireFeature('files')
   @Patch(':id/shares/:shareId')
   async updateShare(
@@ -293,7 +293,7 @@ export class FileManagerController {
     return this.files.updateShare(userId, id, shareId, dto.canDownload);
   }
 
-  @RequirePermission('file', 'update')
+  @RequirePermission('file', 'update', 'active')
   @RequireFeature('files')
   @Delete(':id/shares/:shareId')
   async revokeShare(

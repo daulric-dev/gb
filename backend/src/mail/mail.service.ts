@@ -91,12 +91,79 @@ export function redactEmail(address: string | null | undefined): string {
   return `${name?.[0] ?? ''}***@${domain ?? ''}`;
 }
 
-/** Something that looks like an email address, inside free text. */
-const EMAIL_IN_TEXT = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+const LOCAL_CHAR = /[A-Za-z0-9._%+-]/;
+const DOMAIN_CHAR = /[A-Za-z0-9.-]/;
+const LETTER = /[A-Za-z]/;
 
-/** `text` with every email address in it redacted (see redactEmail). */
+/**
+ * `text` with every email address in it redacted (see redactEmail).
+ *
+ * Scans out from each '@' rather than matching a pattern. The obvious
+ * pattern for the domain - `[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`
+ * - lets a trailing '.abc' be taken either by one more turn of the group or
+ * by the final part, so a string like 'a@b.c.c.c.c.c!' can be split many ways
+ * and the match is polynomial in its length. That is what code scanning
+ * reports as a backtracking risk (CWE-1333), and this runs over SMTP error
+ * text, which the far end writes. The scan below visits each character a
+ * bounded number of times. src/ai/redact.ts does the same thing for the same
+ * reason.
+ *
+ * The regular expressions left here match one character and carry no
+ * quantifier, so there is nothing to backtrack over.
+ */
 export function stripEmails(text: string): string {
-  return text.replace(EMAIL_IN_TEXT, (address) => redactEmail(address));
+  let out = '';
+  let copied = 0;
+
+  for (let at = text.indexOf('@'); at !== -1; at = text.indexOf('@', at + 1)) {
+    if (at < copied) continue;
+
+    // The local part: back from '@' while the characters can belong to one.
+    let start = at;
+    while (start > copied && LOCAL_CHAR.test(text[start - 1])) start--;
+
+    // The domain: forward from '@', then trim trailing dots and hyphens.
+    let end = at + 1;
+    while (end < text.length && DOMAIN_CHAR.test(text[end])) end++;
+    while (end > at + 1 && (text[end - 1] === '.' || text[end - 1] === '-')) end--;
+
+    const domain = text.slice(at + 1, end);
+    const domainLength = addressableDomainLength(domain);
+    if (start === at || domainLength === 0) continue;
+
+    const addressEnd = at + 1 + domainLength;
+    out += text.slice(copied, start) + redactEmail(text.slice(start, addressEnd));
+    copied = addressEnd;
+    at = addressEnd - 1;
+  }
+
+  return out + text.slice(copied);
+}
+
+/**
+ * How much of `domain` is an address worth redacting: the longest prefix that
+ * ends in a dot followed by two or more letters. 0 when there is none.
+ *
+ * Stopping inside the last label is the point, not an accident. A domain that
+ * ends in digits or hyphens still carries an address a reader must not see:
+ * `example.xn--p1ai` (an internationalised domain, which real school
+ * addresses use) and `x.org1` (a bounce message that appended something) both
+ * have a perfectly good address in front of them. Taking the whole run and
+ * demanding the final label be letters would redact neither, and the address
+ * would reach the log in full. So this walks every dot and keeps the furthest
+ * one with a usable label after it - `example.xn` out of `example.xn--p1ai`,
+ * `mail.example` out of `mail.example.c0m` - and redacts up to there. The
+ * trailing characters stay, which is harmless; the address does not.
+ */
+function addressableDomainLength(domain: string): number {
+  let best = 0;
+  for (let dot = domain.indexOf('.'); dot !== -1; dot = domain.indexOf('.', dot + 1)) {
+    let letters = dot + 1;
+    while (letters < domain.length && LETTER.test(domain[letters])) letters++;
+    // Needs a label before the dot, and two or more letters after it.
+    if (dot > 0 && letters - (dot + 1) >= 2) best = letters;
+  }
+  return best;
 }
 
 /**

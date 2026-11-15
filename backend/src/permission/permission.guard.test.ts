@@ -5,18 +5,26 @@ import { computeEffectivePermissions } from './permission.effective';
 import { defaultsForRole } from './permission.catalog';
 import { expectRejection } from '@/test/mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
+import {
+  PERMISSION_SCOPE_KEY,
+  type PermissionScope,
+} from './require-permission.decorator';
 
 function makeContext(request: any) {
   return {
     switchToHttp: () => ({ getRequest: () => request }),
-    getHandler: () => ({}),
-    getClass: () => ({}),
+    getHandler: () => ({ name: 'handler' }),
+    getClass: () => ({ name: 'TestController' }),
   } as unknown as ExecutionContext;
 }
 
-// Reflector stub: returns the required permission key (or undefined).
-const reflector = (key: string | undefined) =>
-  ({ getAllAndOverride: () => key }) as any;
+// Reflector stub: the required permission key, and the declared school scope
+// when the test sets one. Keyed, because the guard reads both.
+const reflector = (key: string | undefined, scope?: PermissionScope) =>
+  ({
+    getAllAndOverride: (metadataKey: string) =>
+      metadataKey === PERMISSION_SCOPE_KEY ? scope : key,
+  }) as any;
 
 const noopCache = {
   get: () => Promise.resolve(null),
@@ -28,7 +36,8 @@ const guardWith = (
   prisma: any,
   key: string | undefined,
   cache: any = noopCache,
-) => new PermissionGuard(reflector(key), cache, prisma);
+  scope?: PermissionScope,
+) => new PermissionGuard(reflector(key, scope), cache, prisma);
 
 /** A membership as computeEffectivePermissions selects it. */
 const membership = (role: string, grantedKeys: string[] = []) => ({
@@ -181,6 +190,86 @@ describe('PermissionGuard', () => {
     const guard = guardWith(prisma, 'school:update');
     const ctx = makeContext({ user: { id: 'u1' }, params: { schoolId: 's1' } });
     expect(await guard.canActivate(ctx)).toBe(true);
+  });
+});
+
+describe('PermissionGuard: declared school scope', () => {
+  /** A prisma whose membership lookup records which school was asked about. */
+  function tracked() {
+    const prisma = createMockPrisma();
+    prisma.organisation_admin.findUnique.mockResolvedValue({ user_id: 'u1' });
+    return prisma;
+  }
+
+  const schoolAskedAbout = (prisma: any) =>
+    prisma.school_management.findFirst.mock.calls[0]?.[0]?.where?.school_id;
+
+  test("'param' reads :schoolId and nothing else", async () => {
+    const prisma = tracked();
+    prisma.organisation_admin.findUnique.mockResolvedValue(null);
+    const guard = guardWith(prisma, 'student:read', noopCache, 'param');
+    const ctx = makeContext({
+      user: { id: 'u1' },
+      params: { schoolId: 's-param', courseId: 'c1' },
+    });
+
+    await expectRejection(guard.canActivate(ctx));
+    expect(schoolAskedAbout(prisma)).toBe('s-param');
+    // Never consults the course or the profile.
+    expect(prisma.course.findUnique).not.toHaveBeenCalled();
+    expect(prisma.user_profile.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("'course' reads the course's school, ignoring :schoolId", async () => {
+    const prisma = tracked();
+    prisma.organisation_admin.findUnique.mockResolvedValue(null);
+    prisma.course.findUnique.mockResolvedValue({ school_id: 's-course' });
+    const guard = guardWith(prisma, 'student:read', noopCache, 'course');
+    const ctx = makeContext({
+      user: { id: 'u1' },
+      params: { schoolId: 's-param', courseId: 'c1' },
+    });
+
+    await expectRejection(guard.canActivate(ctx));
+    expect(schoolAskedAbout(prisma)).toBe('s-course');
+  });
+
+  test("'active' reads the profile, ignoring both params", async () => {
+    const prisma = tracked();
+    prisma.organisation_admin.findUnique.mockResolvedValue(null);
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 's-active' });
+    const guard = guardWith(prisma, 'student:read', noopCache, 'active');
+    const ctx = makeContext({
+      user: { id: 'u1' },
+      params: { schoolId: 's-param', courseId: 'c1' },
+    });
+
+    await expectRejection(guard.canActivate(ctx));
+    expect(schoolAskedAbout(prisma)).toBe('s-active');
+    expect(prisma.course.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("a declared scope that resolves to nothing is refused, not fallen back on", async () => {
+    const prisma = tracked();
+    const guard = guardWith(prisma, 'student:read', noopCache, 'param');
+    // No :schoolId, but an active school that the old fallback would have used.
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 's-active' });
+    const ctx = makeContext({ user: { id: 'u1' }, params: {} });
+
+    const err = await expectRejection(guard.canActivate(ctx));
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect((err as Error).message).toMatch(/school context/);
+  });
+
+  test('with no scope declared, the old order still applies', async () => {
+    const prisma = tracked();
+    prisma.organisation_admin.findUnique.mockResolvedValue(null);
+    prisma.course.findUnique.mockResolvedValue({ school_id: 's-course' });
+    const guard = guardWith(prisma, 'student:read');
+    const ctx = makeContext({ user: { id: 'u1' }, params: { courseId: 'c1' } });
+
+    await expectRejection(guard.canActivate(ctx));
+    expect(schoolAskedAbout(prisma)).toBe('s-course');
   });
 });
 

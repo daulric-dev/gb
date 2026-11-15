@@ -2,6 +2,7 @@ import { Controller, Get, NotFoundException, Param, Res } from '@nestjs/common';
 import { ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { IMAGE_AREAS, ImagesService } from './images.service';
+import { Public } from '@/auth/public.decorator';
 
 /**
  * Public avatar images. `user_profile.avatar_url` points here and every client
@@ -9,6 +10,7 @@ import { IMAGE_AREAS, ImagesService } from './images.service';
  * the old public `images` bucket had. Only `avatars/<file>` and the
  * `IMAGE_AREAS` (course banners, school logos) are reachable.
  */
+@Public()
 @ApiTags('Images')
 @Controller('images')
 export class ImagesController {

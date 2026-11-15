@@ -44,31 +44,31 @@ export class SchoolTimetableController {
     return this.timetable.schoolOf(req.user.id as string);
   }
 
-  @RequirePermission('school', 'read')
+  @RequirePermission('school', 'read', 'active')
   @Get()
   async setup(@Req() req: any) {
     return this.timetable.setup(await this.school(req));
   }
 
-  @RequirePermission('school', 'read')
+  @RequirePermission('school', 'read', 'active')
   @Get('cycle')
   async cycle(@Req() req: any, @Query() q: RangeQueryDto) {
     return this.timetable.cyclePreview(await this.school(req), q.from, q.to);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Patch('settings')
   async settings(@Req() req: any, @Body() dto: UpdateTimetableSettingsDto) {
     return this.timetable.updateSettings(req.user.id as string, await this.school(req), dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('rooms')
   async createRoom(@Req() req: any, @Body() dto: RoomDto) {
     return this.timetable.createRoom(await this.school(req), dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Patch('rooms/:roomId')
   async updateRoom(
     @Req() req: any,
@@ -78,20 +78,20 @@ export class SchoolTimetableController {
     return this.timetable.updateRoom(await this.school(req), roomId, dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Delete('rooms/:roomId')
   @HttpCode(204)
   async deleteRoom(@Req() req: any, @Param('roomId', ParseUUIDPipe) roomId: string) {
     await this.timetable.deleteRoom(await this.school(req), roomId);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('periods')
   async createPeriod(@Req() req: any, @Body() dto: PeriodDto) {
     return this.timetable.createPeriod(await this.school(req), dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Patch('periods/:periodId')
   async updatePeriod(
     @Req() req: any,
@@ -101,20 +101,20 @@ export class SchoolTimetableController {
     return this.timetable.updatePeriod(await this.school(req), periodId, dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Delete('periods/:periodId')
   @HttpCode(204)
   async deletePeriod(@Req() req: any, @Param('periodId', ParseUUIDPipe) periodId: string) {
     await this.timetable.deletePeriod(await this.school(req), periodId);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('closures')
   async createClosure(@Req() req: any, @Body() dto: ClosureDto) {
     return this.timetable.createClosure(req.user.id as string, await this.school(req), dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Delete('closures/:closureId')
   @HttpCode(204)
   async deleteClosure(@Req() req: any, @Param('closureId', ParseUUIDPipe) closureId: string) {

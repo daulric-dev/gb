@@ -31,7 +31,7 @@ export class GradeScaleController {
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('grade-scale', 'read')
+  @RequirePermission('grade-scale', 'read', 'active')
   @Get()
   async list(@Req() req: any) {
     const userId: string = req.user.id;
@@ -39,7 +39,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.list')(raw);
   }
 
-  @RequirePermission('grade-scale', 'read')
+  @RequirePermission('grade-scale', 'read', 'active')
   @Get('default')
   async getDefault(@Req() req: any) {
     const userId: string = req.user.id;
@@ -47,7 +47,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.detail')(raw);
   }
 
-  @RequirePermission('grade-scale', 'read')
+  @RequirePermission('grade-scale', 'read', 'active')
   @Get(':id')
   async get(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
@@ -55,7 +55,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.detail')(raw);
   }
 
-  @RequirePermission('grade-scale', 'create')
+  @RequirePermission('grade-scale', 'create', 'active')
   @UseGuards(AdminGuard)
   @Post()
   async create(@Req() req: any, @Body() dto: CreateGradeScaleDto) {
@@ -64,7 +64,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.created')(raw);
   }
 
-  @RequirePermission('grade-scale', 'update')
+  @RequirePermission('grade-scale', 'update', 'active')
   @UseGuards(AdminGuard)
   @Patch(':id')
   async update(
@@ -77,7 +77,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.updated')(raw);
   }
 
-  @RequirePermission('grade-scale', 'update')
+  @RequirePermission('grade-scale', 'update', 'active')
   @UseGuards(AdminGuard)
   @Put(':id/bands')
   async replaceBands(
@@ -90,7 +90,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.bandsReplaced')(raw);
   }
 
-  @RequirePermission('grade-scale', 'update')
+  @RequirePermission('grade-scale', 'update', 'active')
   @UseGuards(AdminGuard)
   @Post(':id/set-default')
   async setDefault(@Req() req: any, @Param('id') id: string) {
@@ -99,7 +99,7 @@ export class GradeScaleController {
     return this.versioning.resolve(req, 'gradeScale.defaultSet')(raw);
   }
 
-  @RequirePermission('grade-scale', 'delete')
+  @RequirePermission('grade-scale', 'delete', 'active')
   @UseGuards(AdminGuard)
   @Delete(':id')
   async remove(@Req() req: any, @Param('id') id: string) {

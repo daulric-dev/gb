@@ -168,6 +168,27 @@ export function configuredApiUrl(
   return (env.API_URL ? trimTrailingSlashes(env.API_URL.trim()) : '') || undefined;
 }
 
+/**
+ * A warning to log at startup when the auth cookie is shared with a whole
+ * parent domain rather than pinned to one host.
+ *
+ * `Domain=.example.com` makes the cookie visible to *every* subdomain, and
+ * `SameSite=Lax` does not help: siblings are same-site. Any other host under
+ * that domain - a marketing site, a status page, a stale CNAME someone else
+ * now answers for - can read the session cookie, and can overwrite it. That
+ * is the documented trade for letting the web app's middleware see it; it is
+ * only safe while every subdomain is one you control.
+ */
+export function sharedCookieDomainWarning(): string | null {
+  const domain = authCookieDomain();
+  if (!domain) return null;
+  return (
+    `Auth cookies are set for ${domain}, so every subdomain of it can read and overwrite the session cookie. ` +
+    'Keep that domain free of untrusted or third-party-hosted hosts, or serve the app and API from one host and ' +
+    'set AUTH_COOKIE_DOMAIN=none. See docs/content/hosting-requirements.md.'
+  );
+}
+
 export function insecureCookieWarning(): string | null {
   const api = configuredApiUrl() ?? '';
   if (!authCookieSecure() || !api.toLowerCase().startsWith('http://')) return null;

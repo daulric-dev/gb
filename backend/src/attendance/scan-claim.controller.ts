@@ -5,6 +5,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { FeatureService } from '@/features/feature.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { getClientIp, type ThrottlerReq } from '@/throttle/tracker';
+import { Public } from '@/auth/public.decorator';
 import { AttendanceService } from './attendance.service';
 import { ScanClaimDto } from './dto/attendance.dto';
 import {
@@ -19,6 +20,7 @@ import {
  * swaps the short-lived token for a claim here, then sends the student
  * through sign-in and checks them in with the claim.
  */
+@Public()
 @ApiTags('Attendance')
 @Controller('attendance')
 export class ScanClaimController {

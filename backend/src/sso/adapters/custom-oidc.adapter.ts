@@ -340,6 +340,14 @@ export class CustomOidcAdapter extends OidcAdapter {
       });
     } catch (err) {
       const message = (err as Error).message;
+      if (/link-local or metadata/.test(message)) {
+        // Never allowed, with or without the private-network switch: these
+        // addresses are the cloud instance metadata service, which would
+        // hand this server's credentials to whoever set the issuer.
+        throw new BadRequestException(
+          'The issuer resolves to a link-local or cloud metadata address, which is never allowed.',
+        );
+      }
       throw new BadRequestException(
         /private or reserved/.test(message)
           ? 'The issuer resolves to a private or reserved address. Turn on "Identity provider is on our private network" only if it runs on your own network.'

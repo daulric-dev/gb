@@ -29,20 +29,20 @@ export class SchoolJoinCodeController {
   constructor(private readonly membership: StudentMembershipService) {}
 
   /** Whether a live code exists and when it lapses; never the code itself. */
-  @RequirePermission('join-code', 'read')
+  @RequirePermission('join-code', 'read', 'active')
   @Get()
   async status(@Req() req: any) {
     return this.membership.getCodeStatus(req.user.id as string);
   }
 
   /** Returns the plaintext once; only its hash is stored. */
-  @RequirePermission('join-code', 'update')
+  @RequirePermission('join-code', 'update', 'active')
   @Post()
   async issue(@Req() req: any, @Body() dto: IssueClaimCodeDto) {
     return this.membership.issueCode(req.user.id as string, dto.ttlDays);
   }
 
-  @RequirePermission('join-code', 'update')
+  @RequirePermission('join-code', 'update', 'active')
   @Delete()
   @HttpCode(204)
   async revoke(@Req() req: any) {

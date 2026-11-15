@@ -83,7 +83,7 @@ export class StudentAccommodationController {
   constructor(private readonly accommodations: AccommodationService) {}
 
   /** The default, or null when the student has none. */
-  @RequirePermission('student', 'read')
+  @RequirePermission('student', 'read', 'active')
   @Get()
   async get(
     @Req() req: any,
@@ -92,7 +92,7 @@ export class StudentAccommodationController {
     return this.accommodations.getForStudent(req.user.id as string, studentId);
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Put()
   async set(
     @Req() req: any,
@@ -106,7 +106,7 @@ export class StudentAccommodationController {
     );
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Delete()
   @HttpCode(204)
   async remove(

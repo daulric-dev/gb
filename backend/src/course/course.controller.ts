@@ -56,7 +56,7 @@ export class CourseController {
     return this.courses.list(req.user.id as string, query);
   }
 
-  @RequirePermission('course', 'create')
+  @RequirePermission('course', 'create', 'active')
   @Post()
   async create(@Req() req: any, @Body() dto: CreateCourseDto) {
     return this.courses.create(req.user.id as string, dto);

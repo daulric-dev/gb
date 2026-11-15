@@ -33,7 +33,7 @@ export class AnnouncementController {
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('announcement', 'read')
+  @RequirePermission('announcement', 'read', 'active')
   @Get()
   async findAll(@Req() req: any) {
     const userId: string = req.user.id;
@@ -41,7 +41,7 @@ export class AnnouncementController {
     return this.versioning.resolve(req, 'announcement.list')(raw);
   }
 
-  @RequirePermission('announcement', 'read')
+  @RequirePermission('announcement', 'read', 'active')
   @Get('unread-count')
   async unreadCount(@Req() req: any) {
     const userId: string = req.user.id;
@@ -49,7 +49,7 @@ export class AnnouncementController {
     return this.versioning.resolve(req, 'announcement.unreadCount')(raw);
   }
 
-  @RequirePermission('announcement', 'read')
+  @RequirePermission('announcement', 'read', 'active')
   @Post('mark-read')
   async markRead(@Req() req: any) {
     const userId: string = req.user.id;
@@ -57,7 +57,7 @@ export class AnnouncementController {
     return this.versioning.resolve(req, 'announcement.markRead')(raw);
   }
 
-  @RequirePermission('announcement', 'read')
+  @RequirePermission('announcement', 'read', 'active')
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
@@ -65,7 +65,7 @@ export class AnnouncementController {
     return this.versioning.resolve(req, 'announcement.detail')(raw);
   }
 
-  @RequirePermission('announcement', 'create')
+  @RequirePermission('announcement', 'create', 'active')
   @Post()
   async create(@Req() req: any, @Body() dto: CreateSchoolAnnouncementDto) {
     const userId: string = req.user.id;
@@ -73,7 +73,7 @@ export class AnnouncementController {
     return this.versioning.resolve(req, 'announcement.created')(raw);
   }
 
-  @RequirePermission('announcement', 'update')
+  @RequirePermission('announcement', 'update', 'active')
   @Patch(':id')
   async update(
     @Req() req: any,
@@ -85,7 +85,7 @@ export class AnnouncementController {
     return this.versioning.resolve(req, 'announcement.updated')(raw);
   }
 
-  @RequirePermission('announcement', 'delete')
+  @RequirePermission('announcement', 'delete', 'active')
   @Delete(':id')
   async delete(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;

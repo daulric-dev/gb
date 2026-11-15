@@ -128,7 +128,7 @@ export class OrganisationAiController {
 export class SchoolAiController {
   constructor(private readonly ai: AiService) {}
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get()
   get(@Req() req: Req) {
     return this.ai.getSchoolSettings(req.user.id);
@@ -136,7 +136,7 @@ export class SchoolAiController {
 
   // Decides whether students' work and files may leave the platform: step-up.
   @RequireStepUp()
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Put()
   update(@Req() req: Req, @Body() dto: AiSchoolSettingsDto) {
     return this.ai.updateSchoolSettings(req.user.id, dto);

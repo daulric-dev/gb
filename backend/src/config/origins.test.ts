@@ -7,6 +7,7 @@ import {
   corsOriginFor,
   isOriginAllowed,
   primaryOrigin,
+  sharedCookieDomainWarning,
 } from './origins';
 
 const KEYS = ['FRONTEND_URL', 'AUTH_COOKIE_DOMAIN', 'NODE_ENV', 'LOCAL_PREVIEW'] as const;
@@ -295,5 +296,32 @@ describe('authCookieSecure / insecureCookieWarning', () => {
     process.env.API_URL = 'http://localhost:3001';
     process.env.AUTH_COOKIE_SECURE = 'false';
     expect(insecureCookieWarning()).toBeNull();
+  });
+});
+
+describe('sharedCookieDomainWarning', () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  test('warns when the cookie is shared with a parent domain', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.FRONTEND_URL = 'https://app.example.com';
+    delete process.env.AUTH_COOKIE_DOMAIN;
+    expect(sharedCookieDomainWarning()).toMatch(/\.example\.com/);
+  });
+
+  test('silent for a host-only cookie', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.FRONTEND_URL = 'https://app.example.com';
+    process.env.AUTH_COOKIE_DOMAIN = 'none';
+    expect(sharedCookieDomainWarning()).toBeNull();
+  });
+
+  test('silent outside production, where no Domain is set at all', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.FRONTEND_URL = 'https://app.example.com';
+    expect(sharedCookieDomainWarning()).toBeNull();
   });
 });
