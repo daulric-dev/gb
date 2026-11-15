@@ -77,7 +77,7 @@ export class SsoAlertService {
       for (const r of recipients) {
         const settingsUrl = r.orgAdmin
           ? `${origin}/organisation/schools/${schoolId}#single-sign-on`
-          : `${origin}/dashboard/settings#single-sign-on`;
+          : `${origin}/dashboard/settings?tab=sign-in#single-sign-on`;
         const message = ssoChangedEmail({
           school: school?.name ?? 'your school',
           actor: actorLabel,

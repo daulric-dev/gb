@@ -460,7 +460,7 @@ describe('SSO change alerts', () => {
     expect(ops.html).toContain('Riverside &lt;High&gt;');
     expect(ops.html).not.toContain('<High>');
     const head = sent.find((m) => m.to === 'head@riverside.edu');
-    expect(head.text).toContain('https://gb.test/dashboard/settings#single-sign-on');
+    expect(head.text).toContain('https://gb.test/dashboard/settings?tab=sign-in#single-sign-on');
   });
 
   test('nothing alerting: no mail at all', async () => {

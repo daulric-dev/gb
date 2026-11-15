@@ -21,7 +21,7 @@ describe('webhook switched-off alert', () => {
     const sent = mail.send.mock.calls.map((c: any[]) => c[0]);
     expect(sent.map((m: any) => m.to)).toEqual(['head@riverside.edu', 'it@org.edu']);
     expect(sent[0].subject).toBe('Webhook "SIS" was switched off for Riverside');
-    expect(sent[0].text).toContain('/dashboard/settings#integrations');
+    expect(sent[0].text).toContain('/dashboard/settings?tab=sign-in#integrations');
     expect(sent[1].text).toContain(`/organisation/schools/${SCHOOL}#integrations`);
     expect(sent[0].text).toContain('50 failed deliveries');
   });

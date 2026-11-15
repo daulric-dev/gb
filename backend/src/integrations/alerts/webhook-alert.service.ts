@@ -71,7 +71,7 @@ export class WebhookAlertService {
       for (const r of recipients) {
         const settingsUrl = r.orgAdmin
           ? `${origin}/organisation/schools/${schoolId}#integrations`
-          : `${origin}/dashboard/settings#integrations`;
+          : `${origin}/dashboard/settings?tab=sign-in#integrations`;
         const message = build(school?.name ?? 'your school', settingsUrl);
         try {
           await this.mail.send({ to: r.email, ...message });
