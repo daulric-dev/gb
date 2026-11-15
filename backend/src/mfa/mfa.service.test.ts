@@ -118,6 +118,11 @@ function setup(opts: { policy?: boolean; admin?: boolean } = {}) {
       });
       return token;
     },
+    elevated: [] as string[],
+    elevate: async (sessionId: string) => {
+      sessions.elevated.push(sessionId);
+      return new Date(Date.now() + 10 * 60_000);
+    },
     revoked: [] as { userId: string; reason: string }[],
     revokeAll: async (userId: string, reason: string) => {
       sessions.revoked.push({ userId, reason });
@@ -325,10 +330,12 @@ describe('MfaService sign-in challenge', () => {
 
 describe('MfaService organisation requirement', () => {
   test('an admin without an authenticator gets a session limited to setting one up', async () => {
-    const { service, prisma } = setup({ policy: true, admin: true });
+    const { service, prisma, sessions } = setup({ policy: true, admin: true });
     await service.startSession(reply, req, USER, 'email-code');
     const sessionId = prisma.session.rows[0].id;
     expect(prisma.mfa_enrolment_gate.rows).toHaveLength(1);
+    // Just signed in: setting up needs no second emailed code.
+    expect(sessions.elevated).toEqual([sessionId]);
 
     const user = { id: USER, sessionId };
     const blocked = await expectRejection(service.assertSessionAllowed({ url: '/api/courses', user }));

@@ -14,7 +14,7 @@ import { AiOrgFeatureGuard } from './ai-feature.guard';
 import { AiProviderService, resolveSchoolProvider, selectProvider } from './ai-provider.service';
 import { AiService } from './ai.service';
 import { AiDraftsService, toDraft } from './ai-drafts.service';
-import { OrganisationAiController, CourseAiController } from './ai.controller';
+import { OrganisationAiController, CourseAiController, SchoolAiController } from './ai.controller';
 import { AiGateway } from './ai-gateway';
 import { redact, plainText } from './redact';
 import { validateSchema, providerSchema, SchemaError } from './json-schema';
@@ -440,6 +440,20 @@ describe('school settings', () => {
     await ai.updateSchoolSettings('admin', { allowStudentWork: true });
     expect(prisma.ai_school_setting.upsert.mock.calls[0][0].create).toMatchObject({ allow_student_work: true });
     expect(audit.record).toHaveBeenCalled();
+  });
+
+  test('allow sending uploaded files: off by default, its own switch, audited, and step-up to change', async () => {
+    const { ai, prisma, audit } = await build({});
+    prisma.user_profile.findUnique.mockResolvedValue({ school_id: 'school-1' });
+    prisma.ai_school_setting.findUnique.mockResolvedValue(null);
+    expect((await ai.getSchoolSettings('admin')).allowStudentFiles).toBe(false);
+    prisma.ai_school_setting.findUnique.mockResolvedValue({ allow_student_work: true, allow_student_files: false, provider_id: null });
+    await ai.updateSchoolSettings('admin', { allowStudentFiles: true });
+    expect(prisma.ai_school_setting.upsert.mock.calls[0][0].update).toMatchObject({ allow_student_work: true, allow_student_files: true });
+    const changes = JSON.stringify((audit.record.mock.calls[0] as any)[3].changes);
+    expect(changes).toContain('allow_student_files');
+    expect(Reflect.getMetadata(STEP_UP_KEY, SchoolAiController.prototype.update)).toBe(true);
+    expect((await ai.getSchoolSettings('admin')).notice).toContain('uploaded');
   });
 
   test('the sweep clears expired prompts and deletes year-old rows', async () => {

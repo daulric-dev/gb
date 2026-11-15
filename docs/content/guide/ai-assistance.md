@@ -138,8 +138,11 @@ the provider and where requests go. If your organisation later withdraws the
 provider you picked, your school goes back to the organisation default.
 
 There you also choose whether teachers may **send students' work**
-to the provider for rubric feedback suggestions. It is **off by default**.
-Both changes are written to the school's audit log.
+to the provider for marking suggestions, and separately whether they may
+**send uploaded files** (the text read from files students handed in) for AI
+grading drafts. Both are **off by default**; files need both switched on.
+Changes ask you to confirm your identity again (step-up) and are written to
+the school's audit log.
 To switch AI assistance off for your school entirely, use **Settings →
 Features**.
 
@@ -157,6 +160,8 @@ Features**.
   copies it into the form, where you can change it. Nothing is saved until
   you press **Save mark**. This needs your school to allow sending student
   work, and the student's work must be text (files are never sent).
+- **AI grading drafts for handed-in files:** see
+  [Drafting marks for handed-in files](#drafting-marks-for-handed-in-files).
 - **Page summary:** while editing a page, choose **Summarise for students
   with AI**. Edit the summary and key points, then insert them at the top or
   end of the page and save.
@@ -235,6 +240,46 @@ address.
 If the model declines a request, you see "The model declined this request":
 reword the text or write that part yourself.
 
+### Drafting marks for handed-in files
+
+On an assignment's marks table (with your school's **Allow sending student
+work** and **Allow sending uploaded files** both on):
+
+- **Draft with AI** (the sparkle button on a student's row): GradeBook reads
+  the text of the files the student handed in, and any text they typed, and
+  asks the AI for a draft mark. The dialog shows each file as **Read**,
+  **Partly read** (cut to fit the length limit, or pages past the limit) or
+  **Can't read** with the reason. With a rubric, you see a suggested level,
+  points and comment per criterion; tick the ones you agree with. Without a
+  rubric, you see a suggested score out of the assignment's points and a
+  checklist of the requirements in the instructions (met, partly met, not
+  met). Each judgement comes with short quotes from the work; quotes the AI
+  invented or misquoted are removed before you see them. Edit the overall
+  feedback, then **Apply to grading form**: the rubric form or a score form
+  opens filled in, and nothing is saved until you press **Save mark**.
+  **Discard** deletes the draft.
+- **Draft for all ungraded** (above the table): a confirmation shows how many
+  submissions and files will be sent, the most characters that could be sent,
+  to which provider, and who is left out (students whose record restricts AI,
+  work with nothing readable, work already drafted). Drafts run in the
+  background, one request per submission, and appear on the table as they
+  finish (**AI draft: 14**, **AI: nothing readable**, **AI: opted out**...).
+  **Cancel** stops the drafts still waiting. Drafts beyond your hourly AI
+  limit wait and run later.
+- **What is read:** PDFs with a text layer, Word **.docx**, plain text,
+  Markdown, CSV and common code files. Images, scanned or handwritten PDFs,
+  old Word .doc and other files are never read or sent. Limits: 10 MB and 100
+  pages per file, the first 10 files of a hand-in, and 30 000 characters per
+  submission by default (`AI_MAX_SUBMISSION_CHARS`); longer work is cut with
+  a marker, and the draft tells you. Files that the malware scan flagged or
+  that have not finished uploading are skipped.
+- **Drafts are kept** so you can come back to them, and deleted when you save
+  a mark for that work, discard the draft, ask for a new one, when the
+  student is set to **No AI processing** or erased, and otherwise after 90
+  days (`AI_GRADING_DRAFT_RETENTION_DAYS`). They are never shown to students
+  or parents. If the student hands in again, the draft is marked as made from
+  older work.
+
 ## Privacy notice
 
 This is what happens to data when AI assistance is used:
@@ -245,19 +290,26 @@ This is what happens to data when AI assistance is used:
 - **What is sent:** only the text needed for the request: the course page or
   pasted text for quiz questions and summaries; for rubric feedback, the
   rubric, the activity's title and instructions, and the text the student
-  handed in; for course building, what the teacher typed or pasted, the
+  handed in; for AI grading drafts, the same plus the text read from the
+  student's uploaded text documents (never the files themselves, images or
+  scans), cut to the length limit; for course building, what the teacher typed or pasted, the
   course's name and description and titles in the course (never student
   data).
 - **Names and emails are removed:** before sending, students' names are
   replaced with `[Student]` / `[Classmate]`, and email addresses and phone
   numbers with placeholders.
-- **Student work** is sent only for rubric feedback suggestions, only when a
-  teacher asks for one, and only if the school allows it (off by default).
-  Files are never sent.
+- **Student work** is sent only for marking suggestions, only when a teacher
+  asks for one, only if the school allows it (off by default), and never for
+  a student whose record restricts AI. The text of uploaded files is sent only
+  if the school also allows sending uploaded files (off by default).
 - **What is kept in GradeBook:** a log entry per request (who, feature,
   provider, model, tokens, result), without the content, for a year. Content
   is kept only if the organisation turns on prompt keeping, and then for 30
-  days.
+  days. AI grading drafts (the suggested mark, comments and short quotes, and
+  which files were read; never the extracted text) are kept for the teacher
+  until a mark is saved or the draft discarded, and for at most
+  `AI_GRADING_DRAFT_RETENTION_DAYS` (90 by default). They are included in a
+  staff subject access export for the student.
 - **At the provider:** the provider's own terms and data retention apply to
   what it receives. Check them before you turn AI assistance on.
 - **Decisions stay with teachers:** the AI suggests; it never marks work and

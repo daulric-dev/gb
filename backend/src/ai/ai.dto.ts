@@ -87,6 +87,8 @@ export class AiOrgSettingsDto {
 
 export class AiSchoolSettingsDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() allowStudentWork?: boolean;
+  /** Allow sending the text read from files students uploaded (AI grading drafts). Needs allowStudentWork too. */
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() allowStudentFiles?: boolean;
   /**
    * One of the organisation's providers that is available to schools, or
    * null for the organisation default. Left out: unchanged.

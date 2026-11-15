@@ -157,6 +157,10 @@ function inspectOoxml(buffer: Buffer, contentType: string): ContentCheck {
   return { ok: true };
 }
 
+/** Why a PDF carrying attachments fails; the upload strips them and checks again. */
+export const PDF_EMBEDDED_FILE = 'has an embedded file';
+export const PDF_EMBEDDED_FILE_REASON = `PDF rejected: it ${PDF_EMBEDDED_FILE}`;
+
 function inspectPdf(buffer: Buffer): ContentCheck {
   const text = buffer.toString('latin1');
 
@@ -164,7 +168,7 @@ function inspectPdf(buffer: Buffer): ContentCheck {
     [/\/Launch\b/, 'launches an external program'],
     [/\/JavaScript\b/, 'contains JavaScript'],
     [/\/JS\b/, 'contains JavaScript'],
-    [/\/EmbeddedFile\b/, 'has an embedded file'],
+    [/\/EmbeddedFile\b/, PDF_EMBEDDED_FILE],
   ];
 
   for (const [pattern, why] of dangerous) {

@@ -340,6 +340,8 @@ model user_profile {
   activity_accommodation                                            activity_accommodation[]
   question_bank                                                     question_bank[]
   quiz_answer_marked                                                quiz_answer[]           @relation("quiz_answer_marked_by")
+  ai_grading_draft_created                                          ai_grading_draft[]      @relation("ai_grading_draft_created_by")
+  ai_grading_batch_created                                          ai_grading_batch[]      @relation("ai_grading_batch_created_by")
   student_accommodation                                             student_accommodation[]
   announcement                                                      announcement[]
   announcement_read                                                 announcement_read[]

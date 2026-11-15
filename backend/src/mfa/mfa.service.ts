@@ -240,6 +240,11 @@ export class MfaService {
     if (!session) return;
     await this.prisma.mfa_enrolment_gate.create({ data: { session_id: session.id, user_id: userId } });
     await this.cache.set(gateKey(session.id), true, GATE_CACHE_TTL_S);
+    // The person proved who they are seconds ago (emailed code or single
+    // sign-on), and this session can do nothing but set up an authenticator:
+    // count that as "Confirm it's you" for the step-up window, so setting up
+    // does not ask for a second emailed code straight after signing in.
+    await this.sessions.elevate(session.id);
   }
 
   private async enrolmentNeeded(userId: string): Promise<boolean> {
@@ -405,14 +410,16 @@ export class MfaService {
     const sessionId = request.user?.sessionId;
     if (!sessionId) return;
     if (GATE_ALLOWED.test(request.url ?? '')) return;
-    if (await this.isGated(sessionId)) throw enrolmentRequiredError();
     const userId = request.user?.id;
+    // Only while the organisation still requires an app of this user and
+    // they have none: switching the requirement off (or setting an app up)
+    // frees sessions that were limited to setting one up.
     if (userId && (await this.enrolmentNeededCached(userId))) throw enrolmentRequiredError();
+    if (!userId && (await this.isGated(sessionId))) throw enrolmentRequiredError();
   }
 
   /** Whether this session may be used beyond setting up an app (LTI launches and the like). */
-  async sessionUsable(userId: string, sessionId: string): Promise<boolean> {
-    if (await this.isGated(sessionId)) return false;
+  async sessionUsable(userId: string, _sessionId: string): Promise<boolean> {
     return !(await this.enrolmentNeededCached(userId));
   }
 

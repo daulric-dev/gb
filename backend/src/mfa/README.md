@@ -88,9 +88,11 @@ Schools → a school**); for anyone else, call the route.
 
 ## Organisation policy and the enrolment gate
 
-`organisation.require_mfa_for_admins` (default **true**; migration
-`20261205180000_require_admin_mfa` also turned it on for existing
-organisations). It covers (`holdsPrivilegedRole`) organisation admins, school
+`organisation.require_mfa_for_admins` (default **false**: two-step
+verification is opt-in; setup step `admin-mfa-opt-in` switched off the
+requirement an unreleased build had turned on). The gate only applies while
+the requirement is on and the user has no app: switching it off frees
+limited sessions at once. It covers (`holdsPrivilegedRole`) organisation admins, school
 admins (`school_management.role = 'admin'`), and members whose built-in role
 or a custom role grants `pastoral-note:safeguarding` in any school.
 

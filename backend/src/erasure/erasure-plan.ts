@@ -94,6 +94,9 @@ export const REGISTRY: Readonly<Record<string, TableSpec>> = {
   // memberships and course notifications in that school go.
   'chat.conversation_member': { where: ['user_id', 'conversation_id'], set: {} },
   'course.course_notification': { where: ['user_profile_id', 'course_id'], set: {} },
+  // Student record erasure: AI grading drafts of the student's work (they
+  // also cascade with the student; named so a replay states it).
+  'grading.ai_grading_draft': { where: ['student_id'], set: {} },
   'public.audit_log': {
     where: ['actor_id'],
     set: { actor_name: 'text', actor_email: 'text' },

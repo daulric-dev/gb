@@ -97,8 +97,9 @@ export const staffRecordsCollector: Collector = {
   id: 'staff-records',
   title: 'Staff records about the student',
   description:
-    'Flags the school\'s systems raised about the student and staff comments: at-risk analytics (grade, missing work, attendance rate, reasons), attendance alerts, similarity (possible copying) matches on submitted work, report card comments (including drafts), and parent invitations sent for the student.',
+    'Flags the school\'s systems raised about the student and staff comments: at-risk analytics (grade, missing work, attendance rate, reasons), attendance alerts, similarity (possible copying) matches on submitted work, AI grading drafts of submitted work (suggested marks, comments and quotes for a teacher to review; never applied on their own), report card comments (including drafts), and parent invitations sent for the student.',
   covers: [
+    'grading.ai_grading_draft.student_id',
     'public.analytics_at_risk.student_id',
     'student.attendance_alert.student_id',
     'grading.report_comment.student_id',
@@ -109,10 +110,10 @@ export const staffRecordsCollector: Collector = {
   async collect(ctx) {
     const { prisma, subject } = ctx;
     if (subject.studentIds.length === 0 || !subject.schoolId) {
-      return { data: { atRisk: [], attendanceAlerts: [], similarity: [], reportComments: [], parentInvites: [] }, count: 0 };
+      return { data: { atRisk: [], attendanceAlerts: [], similarity: [], aiGradingDrafts: [], reportComments: [], parentInvites: [] }, count: 0 };
     }
     const school = { school_id: subject.schoolId };
-    const [atRisk, alerts, comments, headComments, invites, fingerprints] = await Promise.all([
+    const [atRisk, alerts, comments, headComments, invites, fingerprints, aiDrafts] = await Promise.all([
       prisma.analytics_at_risk.findMany({
         where: { student_id: studentIn(ctx), ...school },
         select: { course_id: true, grade: true, missing: true, attendance_rate: true, mastery_score: true, reasons: true, computed_at: true },
@@ -137,6 +138,24 @@ export const staffRecordsCollector: Collector = {
       prisma.similarity_fingerprint.findMany({
         where: { submission: { student_id: studentIn(ctx) }, ...school },
         select: { id: true, part: true, word_count: true, computed_at: true, activity_id: true, course_id: true },
+      }),
+      prisma.ai_grading_draft.findMany({
+        where: { student_id: studentIn(ctx), ...school },
+        select: {
+          activity_id: true,
+          status: true,
+          mode: true,
+          files: true,
+          suggestions: true,
+          truncated: true,
+          provider_name: true,
+          model: true,
+          error: true,
+          created_at: true,
+          finished_at: true,
+          activity: { select: { title: true, course_id: true } },
+        },
+        orderBy: { created_at: 'asc' },
       }),
     ]);
     const matches = fingerprints.length
@@ -163,6 +182,7 @@ export const staffRecordsCollector: Collector = {
       ...atRisk.map((r) => r.course_id),
       ...comments.map((c) => c.course_id),
       ...fingerprints.map((f) => f.course_id),
+      ...aiDrafts.map((d) => d.activity.course_id),
     ]);
     const authors = await personNames(ctx, [...comments.map((c) => c.author_id), ...headComments.map((c) => c.author_id)]);
 
@@ -197,6 +217,22 @@ export const staffRecordsCollector: Collector = {
           foundAt: m.created_at,
         };
       }),
+      // What the AI suggested to the teacher about the student's work (the
+      // text read from the files is never stored, so it is not here).
+      aiGradingDrafts: aiDrafts.map((d) => ({
+        course: courses.get(d.activity.course_id) ?? null,
+        activity: d.activity.title,
+        status: d.status,
+        kind: d.mode,
+        filesRead: d.files,
+        suggestion: d.suggestions,
+        truncated: d.truncated,
+        provider: d.provider_name,
+        model: d.model,
+        error: d.error,
+        createdAt: d.created_at,
+        finishedAt: d.finished_at,
+      })),
       reportComments: [
         ...comments.map((c) => ({
           term: termName.get(c.term_id) ?? null,
@@ -230,6 +266,7 @@ export const staffRecordsCollector: Collector = {
       data.atRisk.length +
       data.attendanceAlerts.length +
       data.similarity.length +
+      data.aiGradingDrafts.length +
       data.reportComments.length +
       data.parentInvites.length;
     return { data, count };

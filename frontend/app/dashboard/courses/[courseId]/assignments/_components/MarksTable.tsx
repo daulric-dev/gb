@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
@@ -11,6 +12,7 @@ import {
   MessageSquareText,
   Search,
   SlashIcon,
+  Sparkles,
   Table2,
   Users,
 } from "lucide-react";
@@ -63,6 +65,19 @@ import { SubmissionFileViewerDialog } from "./SubmissionFileViewerDialog";
 import { userMessage } from "@/lib/errors";
 import { similarityLabel, type SimilarityFlag } from "@/lib/similarity";
 import { SimilarityDialog } from "./SimilarityDialog";
+import { useFeatures } from "@/hooks/use-features";
+import {
+  aiErrorMessage,
+  aiGradingApi,
+  draftBadge,
+  type AiDraftSummary,
+  type AiGradingOverview,
+} from "@/lib/ai";
+import { AiGradingDraftDialog, type RubricPrefill } from "./AiGradingDraftDialog";
+import { AiGradingBatchControls } from "./AiGradingBatchControls";
+
+/** How often the marks table refreshes AI drafts while a batch runs (ms). */
+const AI_BATCH_POLL_MS = 4000;
 
 /** What the grade and excuse endpoints answer with. */
 interface MarkResult {
@@ -164,9 +179,64 @@ export function MarksTable({
   } | null>(null);
   const working = useSignal(false);
   const similarFor = useSignal<{ submissionId: string; name: string } | null>(null);
+  // AI grading drafts (assignments with handed-in work, ai_assistance on).
+  const aiOverview = useSignal<AiGradingOverview | null>(null);
+  const aiFor = useSignal<SubmissionRow | null>(null);
+  const rubricPrefill = useSignal<RubricPrefill | null>(null);
+  const scoreForm = useSignal<{ row: SubmissionRow; score: string; feedback: string } | null>(null);
+  const { hasFeature } = useFeatures();
 
   const editable = canGrade && !isDraft;
   const online = kind !== "offline";
+  const aiOn = editable && kind === "assignment" && hasFeature("ai_assistance");
+  const batchRunning = aiOverview.value?.batch?.status === "running";
+
+  useEffect(() => {
+    if (!aiOn) return;
+    let active = true;
+    const load = () =>
+      aiGradingApi
+        .overview(activityId)
+        .then((o) => {
+          if (active) aiOverview.value = o;
+        })
+        .catch(() => undefined);
+    void load();
+    const timer = batchRunning ? setInterval(() => void load(), AI_BATCH_POLL_MS) : null;
+    return () => {
+      active = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [aiOn, activityId, batchRunning, aiOverview]);
+
+  function setDraftSummary(studentId: string, summary: AiDraftSummary | null) {
+    const o = aiOverview.value;
+    if (!o) return;
+    const rest = o.drafts.filter((d) => d.studentId !== studentId);
+    aiOverview.value = { ...o, drafts: summary ? [...rest, summary] : rest };
+  }
+
+  /** A saved mark deletes the student's AI draft on the server; drop its badge too. */
+  function clearDraft(studentId: string) {
+    if (aiOverview.value?.drafts.some((d) => d.studentId === studentId)) setDraftSummary(studentId, null);
+  }
+
+  async function saveScoreForm() {
+    const form = scoreForm.value;
+    if (!form) return;
+    const score = Number(form.score);
+    if (form.score.trim() === "" || !Number.isFinite(score) || score < 0 || score > points) {
+      toast.error(`Enter a score between 0 and ${points}`);
+      return;
+    }
+    working.value = true;
+    const ok = await saveGrade(form.row, score, form.feedback.trim());
+    working.value = false;
+    if (ok) {
+      scoreForm.value = null;
+      toast.success("Mark saved");
+    }
+  }
 
   function replace(result: MarkResult) {
     onRowsChangeAction(
@@ -189,6 +259,7 @@ export function MarksTable({
         },
       );
       replace(result);
+      clearDraft(row.studentId);
       return true;
     } catch (err) {
       toast.error(userMessage(err, "Failed to save mark"));
@@ -279,6 +350,7 @@ export function MarksTable({
     );
   }
 
+  const draftsByStudent = new Map((aiOverview.value?.drafts ?? []).map((d) => [d.studentId, d]));
   const q = search.value.trim().toLowerCase();
   const visible = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
   const marked = rows.filter(
@@ -306,6 +378,22 @@ export function MarksTable({
           {average !== null &&
             ` · average ${Math.round(average * 10) / 10}/${points}`}
         </span>
+        {aiOn && aiOverview.value && (
+          <div className="ml-auto">
+            <AiGradingBatchControls
+              activityId={activityId}
+              batch={aiOverview.value.batch}
+              problem={aiOverview.value.setup.problem}
+              onBatchAction={(batch) => {
+                if (aiOverview.value) aiOverview.value = { ...aiOverview.value, batch };
+                void aiGradingApi
+                  .overview(activityId)
+                  .then((o) => (aiOverview.value = o))
+                  .catch((err) => toast.error(aiErrorMessage(err)));
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {isDraft && canGrade && (
@@ -370,6 +458,34 @@ export function MarksTable({
                         </button>
                       </p>
                     )}
+                    {(() => {
+                      const badge = aiOn ? draftBadge(draftsByStudent.get(row.studentId)) : null;
+                      if (!badge) return null;
+                      return (
+                        <p className="mt-1">
+                          <button
+                            type="button"
+                            onClick={() => (aiFor.value = row)}
+                            className="rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                            aria-label={`${badge.label}: open the AI draft for ${row.name}`}
+                            data-private-label
+                          >
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                badge.tone === "ready" && "border-violet-500/40 bg-violet-500/10 text-violet-800 dark:text-violet-300",
+                                badge.tone === "busy" && "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-300",
+                                badge.tone === "problem" && "border-destructive/40 text-destructive",
+                                badge.tone === "muted" && "text-muted-foreground",
+                              )}
+                            >
+                              <Sparkles className="mr-1 size-3" aria-hidden />
+                              <span translate="no">{badge.label}</span>
+                            </Badge>
+                          </button>
+                        </p>
+                      );
+                    })()}
                     {sub?.needsMarking && (
                       <p className="mt-1">
                         <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300">
@@ -620,6 +736,18 @@ export function MarksTable({
                             <ListChecks className="size-4" aria-hidden />
                           </Button>
                         )}
+                        {aiOn && handedIn && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Draft with AI"
+                            aria-label={`Draft a mark with AI for ${row.name}`}
+                            data-private-label
+                            onClick={() => (aiFor.value = row)}
+                          >
+                            <Sparkles className="size-4" aria-hidden />
+                          </Button>
+                        )}
                         {rubric && (
                           <Button
                             size="sm"
@@ -706,15 +834,105 @@ export function MarksTable({
             rubricFor.value ? (assessments[rubricFor.value.studentId] ?? []) : []
           }
           feedback={rubricFor.value?.submission?.feedback ?? null}
+          prefill={rubricPrefill.value}
           onOpenChangeAction={(v) => {
-            if (!v) rubricFor.value = null;
+            if (!v) {
+              rubricFor.value = null;
+              rubricPrefill.value = null;
+            }
           }}
           onSavedAction={(result) => {
             replace(result.submission);
+            clearDraft(result.submission.studentId);
             onAssessedAction?.(result.submission.studentId, result.assessments);
           }}
         />
       )}
+
+      {aiOn && (
+        <AiGradingDraftDialog
+          open={!!aiFor.value}
+          activityId={activityId}
+          student={aiFor.value}
+          rubric={rubric}
+          points={points}
+          onOpenChangeAction={(v) => {
+            if (!v) aiFor.value = null;
+          }}
+          onChangedAction={setDraftSummary}
+          onApplyRubricAction={(prefill) => {
+            const row = aiFor.value;
+            aiFor.value = null;
+            rubricPrefill.value = prefill;
+            rubricFor.value = row;
+          }}
+          onApplyScoreAction={(prefill) => {
+            const row = aiFor.value;
+            aiFor.value = null;
+            if (row) {
+              scoreForm.value = {
+                row,
+                score: prefill.score === null ? "" : String(prefill.score),
+                feedback: prefill.feedback,
+              };
+            }
+          }}
+        />
+      )}
+
+      <Dialog
+        open={!!scoreForm.value}
+        onOpenChange={(v) => {
+          if (!v) scoreForm.value = null;
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Mark <span translate="no">{scoreForm.value?.row.name}</span>
+            </DialogTitle>
+            <DialogDescription>
+              Filled in from the AI draft you reviewed. Change anything you need; the student sees the
+              mark and feedback only once you save.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="aiScoreFormScore" className="text-sm">
+              Score
+            </Label>
+            <Input
+              id="aiScoreFormScore"
+              inputMode="decimal"
+              className="w-24"
+              value={scoreForm.value?.score ?? ""}
+              onChange={(e) => scoreForm.value && (scoreForm.value = { ...scoreForm.value, score: e.target.value })}
+              translate="no"
+            />
+            <span className="text-sm text-muted-foreground">/{points}</span>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="aiScoreFormFeedback" className="text-xs">
+              Feedback
+            </Label>
+            <Textarea
+              id="aiScoreFormFeedback"
+              rows={5}
+              value={scoreForm.value?.feedback ?? ""}
+              onChange={(e) => scoreForm.value && (scoreForm.value = { ...scoreForm.value, feedback: e.target.value })}
+              translate="no"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => (scoreForm.value = null)} disabled={working.value}>
+              Cancel
+            </Button>
+            <Button onClick={() => void saveScoreForm()} disabled={working.value}>
+              {working.value && <Loader2 className="mr-2 size-4 animate-spin" />}
+              Save mark
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!feedbackFor.value}

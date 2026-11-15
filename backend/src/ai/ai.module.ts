@@ -28,5 +28,6 @@ import { AiCourseService } from './ai-course.service';
   imports: [OrganisationModule, CourseModule, GradingModule, MasteryModule],
   controllers: [OrganisationAiController, SchoolAiController, CourseAiController, CourseBuilderAiController],
   providers: [AiOrgFeatureGuard, AiProviderService, AiService, AiDraftsService, AiCourseService],
+  exports: [AiService],
 })
 export class AiModule {}

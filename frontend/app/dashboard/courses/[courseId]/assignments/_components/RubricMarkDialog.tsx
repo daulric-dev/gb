@@ -28,6 +28,7 @@ import { userMessage } from "@/lib/errors";
 import { useFeatures } from "@/hooks/use-features";
 import { aiDraftApi, aiErrorMessage, type RubricSuggestions } from "@/lib/ai";
 import { AiDraftNote } from "@/components/ai/ai-draft-note";
+import type { RubricPrefill } from "./AiGradingDraftDialog";
 
 /** PUT /activities/:id/submissions/:studentId/rubric */
 export interface RubricMarkResult {
@@ -65,6 +66,7 @@ export function RubricMarkDialog({
   feedback,
   onOpenChangeAction,
   onSavedAction,
+  prefill = null,
 }: {
   open: boolean;
   activityId: string;
@@ -75,6 +77,8 @@ export function RubricMarkDialog({
   feedback: string | null;
   onOpenChangeAction: (open: boolean) => void;
   onSavedAction: (result: RubricMarkResult) => void;
+  /** From an AI grading draft: the criteria the teacher accepted and the edited feedback. Still saved only by Save mark. */
+  prefill?: RubricPrefill | null;
 }) {
   useSignals();
   const picks = useSignal<Record<string, CriterionPick>>({});
@@ -97,9 +101,10 @@ export function RubricMarkDialog({
         comment: a.comment ?? "",
       };
     }
+    for (const [criterionId, pick] of Object.entries(prefill?.picks ?? {})) next[criterionId] = pick;
     picks.value = next;
     override.value = "";
-    note.value = feedback ?? "";
+    note.value = prefill?.feedback || (feedback ?? "");
     // Reset only when the dialog opens for a student, not on every render
     // that hands in a fresh (but equal) `existing` array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,6 +215,13 @@ export function RubricMarkDialog({
             the mark unless you enter a score.
           </DialogDescription>
         </DialogHeader>
+
+        {prefill && (
+          <AiDraftNote>
+            Filled in from the AI draft you reviewed. Check each criterion; nothing is saved until you
+            press Save mark.
+          </AiDraftNote>
+        )}
 
         {aiOn && (
           <div className="space-y-2">

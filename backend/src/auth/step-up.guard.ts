@@ -10,7 +10,7 @@ import {
 
 export const STEP_UP_KEY = 'require_step_up';
 export const STEP_UP_REQUIRED = 'STEP_UP_REQUIRED';
-export const STEP_UP_MESSAGE = "Confirm it's you to change single sign-on or integration settings.";
+export const STEP_UP_MESSAGE = "Confirm it's you to make this change.";
 
 /** The 403 a route answers until the session is confirmed. Clients key off `code`. */
 export function stepUpRequired(): ForbiddenException {

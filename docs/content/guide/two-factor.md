@@ -74,7 +74,9 @@ see whether it did. What GradeBook does:
 ### The requirement
 
 **Organisation → Settings → Two-step verification**: *Require an
-authenticator app for admins and safeguarding roles*. On by default. It
+authenticator app for admins and safeguarding roles*. Off by default: each person
+turns two-step verification on for themselves unless the organisation
+switches this on. It
 covers:
 
 - organisation administrators;

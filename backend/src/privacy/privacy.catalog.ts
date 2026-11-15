@@ -202,6 +202,16 @@ const RETENTION: readonly RetentionDefinition[] = [
     text: 'One year (who, when, which feature; prompts and answers are stored only if the organisation turned that on, and then for 30 days)',
   },
   {
+    key: 'ai_grading_drafts',
+    label: "AI grading drafts (suggested marks, comments and quotes about a student's work, for the teacher to review)",
+    env: 'AI_GRADING_DRAFT_RETENTION_DAYS',
+    unit: 'days',
+    default: 90,
+    read: 'int',
+    text: 'Deleted {n} after they are made, or sooner when the teacher saves a mark, discards the draft, or the student is erased or restricted from AI',
+    zero: 'Kept until the teacher saves a mark or discards the draft, or the student is erased or restricted from AI',
+  },
+  {
     key: 'translation_cache',
     label: 'Translated text cached on the server',
     env: 'TRANSLATION_CACHE_TTL_HOURS',

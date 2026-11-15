@@ -91,7 +91,7 @@ export function buildReadme(input: ReadmeInput): string {
   const notes: string[] = [];
   if (input.scope === 'self') {
     notes.push(
-      'Records staff keep about students - behaviour and pastoral notes, at-risk analytics, attendance alerts, similarity (copying) checks and draft report comments - are not part of a self-service copy. You can ask your school for them with a subject access request; the school prepares that copy and can withhold information only where the law allows it.',
+      'Records staff keep about students - behaviour and pastoral notes, at-risk analytics, attendance alerts, similarity (copying) checks, AI grading drafts and draft report comments - are not part of a self-service copy. You can ask your school for them with a subject access request; the school prepares that copy and can withhold information only where the law allows it.',
     );
   }
   if (input.scope === 'parent') {

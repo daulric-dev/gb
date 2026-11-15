@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@/generated/prisma/client';
 import { createMockPrisma, type MockPrisma } from '@/test/prisma-mock';
 import { runSetupSteps, type SetupStep } from './runner';
-import { SETUP_STEPS, analyticsDefaultOffKeepExisting, studentLeftAtBackfill } from './steps';
+import { SETUP_STEPS, adminMfaOptIn, analyticsDefaultOffKeepExisting, studentLeftAtBackfill } from './steps';
 
 const NOW = new Date('2026-11-14T12:00:00Z');
 
@@ -83,7 +83,20 @@ describe('setup step runner', () => {
   });
 
   test('the shipped steps have unique, stable keys', () => {
-    expect(SETUP_STEPS.map((s) => s.key)).toEqual(['student-left-at-backfill', 'analytics-default-off-keep-existing']);
+    expect(SETUP_STEPS.map((s) => s.key)).toEqual(['student-left-at-backfill', 'analytics-default-off-keep-existing', 'admin-mfa-opt-in']);
+  });
+});
+
+describe('admin-mfa-opt-in', () => {
+  test('turns the requirement off and frees limited sessions', async () => {
+    const db = createMockPrisma();
+    db.organisation.updateMany.mockResolvedValue({ count: 1 });
+    db.mfa_enrolment_gate.deleteMany.mockResolvedValue({ count: 2 });
+    expect(await adminMfaOptIn.run(db as any, NOW)).toBe(
+      '1 organisation(s) no longer require two-step verification; 2 limited session(s) freed',
+    );
+    expect(db.organisation.updateMany.mock.calls[0][0].where).toEqual({ require_mfa_for_admins: true });
+    expect(db.organisation.updateMany.mock.calls[0][0].data.require_mfa_for_admins).toBe(false);
   });
 });
 

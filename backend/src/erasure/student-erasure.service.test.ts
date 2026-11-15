@@ -148,8 +148,12 @@ describe('StudentErasureService.erase', () => {
     expect(entry.replay.steps).toEqual([
       { op: 'delete_storage_prefix', prefixes: [REPORT] },
       { op: 'delete', table: 'public.roster_link', where: { target_id: [STUDENT, ENROLMENT] } },
+      { op: 'delete', table: 'grading.ai_grading_draft', where: { student_id: [STUDENT] } },
       { op: 'delete', table: 'student.student', where: { id: [STUDENT] } },
     ]);
+    // AI grading drafts of the student's work go in the same transaction.
+    expect(tx.ai_grading_draft.deleteMany.mock.calls[0][0]).toEqual({ where: { student_id: STUDENT } });
+    expect(prisma.ai_grading_draft.deleteMany).not.toHaveBeenCalled();
     expect(storage.objects.has(REPORT)).toBe(false);
   });
 

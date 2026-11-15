@@ -17,6 +17,8 @@ export const AI_FEATURES = [
   'rubric_draft',
   'announcement_draft',
   'outcome_suggestions',
+  // Grading drafts from the text of files students uploaded (src/ai/file-grading).
+  'ai_file_grading',
   'test',
 ] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
@@ -58,6 +60,7 @@ export const AI_FEATURE_MAX_TOKENS = {
   rubric_draft: 6_000,
   announcement_draft: 4_000,
   outcome_suggestions: 6_000,
+  ai_file_grading: 8_000,
 } as const;
 
 /** Whole-request timeout (ms); AI_REQUEST_TIMEOUT_MS overrides. */
@@ -78,8 +81,19 @@ export const AI_SWEEP_MS = 6 * 60 * 60 * 1000;
 
 /** Largest pasted or page text sent for quiz questions or a summary (characters). */
 export const AI_MAX_SOURCE_CHARS = 30_000;
-/** Largest submission text sent for rubric feedback (characters). */
+/** Largest submission text sent for rubric feedback (characters); the default for file grading. */
 export const AI_MAX_SUBMISSION_CHARS = 30_000;
+
+/**
+ * Most characters of one submission's work (handed-in text plus the text
+ * read from its files) sent for an AI grading draft. AI_MAX_SUBMISSION_CHARS
+ * (env) overrides the default 30 000, between 1 000 and 200 000. Longer work
+ * is cut with a marker and the teacher is told.
+ */
+export function aiMaxSubmissionChars(): number {
+  const v = Number(process.env.AI_MAX_SUBMISSION_CHARS);
+  return Number.isInteger(v) && v >= 1_000 && v <= 200_000 ? v : AI_MAX_SUBMISSION_CHARS;
+}
 export const AI_MAX_QUESTIONS = 10;
 
 /** Course outline limits (the schema enforces them on the model's answer and the DTO on the teacher's plan). */

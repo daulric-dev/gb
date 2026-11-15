@@ -72,6 +72,8 @@ export interface AiStatus {
   /** The provider requests from this school go to. */
   provider: AiProviderSummary | null;
   allowStudentWork: boolean;
+  /** Text read from uploaded files may be sent (AI grading drafts); needs allowStudentWork too. */
+  allowStudentFiles?: boolean;
   notice: string;
   note?: string;
 }
@@ -294,8 +296,8 @@ export const aiOrgApi = {
 export const aiSchoolApi = {
   get: () => api<AiSchoolSettings>("/schools/current/ai"),
   /** `providerId`: a provider id, null for the organisation default; left out = unchanged. */
-  save: (body: { allowStudentWork?: boolean; providerId?: string | null }) =>
-    api<AiSchoolSettings>("/schools/current/ai", { method: "PUT", body }),
+  save: (body: { allowStudentWork?: boolean; allowStudentFiles?: boolean; providerId?: string | null }) =>
+    api<AiSchoolSettings>("/schools/current/ai", { method: "PUT", body, stepUp: true }),
 };
 
 export const aiDraftApi = {
@@ -331,6 +333,10 @@ export function aiErrorMessage(err: unknown): string {
       case "AI_RATE_LIMITED":
       case "AI_CAP_REACHED":
       case "AI_STUDENT_WORK_NOT_ALLOWED":
+      case "AI_STUDENT_FILES_NOT_ALLOWED":
+      case "AI_STUDENT_RESTRICTED":
+      case "AI_BATCH_CHANGED":
+      case "AI_BATCH_RUNNING":
       case "AI_PROVIDER_ERROR":
       case "AI_KEY_UNREADABLE":
         return err.message;
@@ -377,4 +383,251 @@ export function modelSuggestions(
   kind: AiProviderKind,
 ): string[] {
   return list?.suggestions[kind] ?? [];
+}
+
+// ── AI grading drafts for handed-in files (API src/ai/file-grading) ─────────
+
+export type DraftStatus = "queued" | "running" | "ready" | "failed" | "skipped" | "cancelled";
+export type DraftMode = "rubric" | "score";
+export type FileReadStatus = "read" | "truncated" | "unreadable" | "skipped";
+export type RequirementStatus = "met" | "partly" | "not_met";
+
+export interface FileReport {
+  fileId: string | null;
+  name: string;
+  status: FileReadStatus;
+  reason: string | null;
+  chars: number;
+  pages: number | null;
+}
+
+export interface RubricDraftCriterion {
+  criterionId: string;
+  title: string;
+  maxPoints: number;
+  ratingId: string | null;
+  ratingLabel: string | null;
+  points: number | null;
+  comment: string;
+  evidence: string[];
+}
+
+export type GradingDraft =
+  | {
+      mode: "rubric";
+      criteria: RubricDraftCriterion[];
+      suggestedTotal: number;
+      feedback: string;
+      feedbackEvidence: string[];
+      evidenceDropped: number;
+    }
+  | {
+      mode: "score";
+      score: number;
+      points: number;
+      requirements: { requirement: string; status: RequirementStatus; comment: string; evidence: string[] }[];
+      feedback: string;
+      feedbackEvidence: string[];
+      evidenceDropped: number;
+    };
+
+export interface AiGradingDraftView {
+  id: string;
+  studentId: string;
+  submissionId: string;
+  status: DraftStatus;
+  mode: DraftMode;
+  files: FileReport[];
+  draft: GradingDraft | null;
+  charsSent: number | null;
+  truncated: boolean;
+  provider: string | null;
+  model: string | null;
+  requestId: string | null;
+  errorCode: string | null;
+  error: string | null;
+  /** The student handed in again after this draft was made. */
+  stale: boolean;
+  batchId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  note: string;
+}
+
+export interface AiDraftSummary {
+  studentId: string;
+  status: DraftStatus;
+  mode: DraftMode;
+  errorCode: string | null;
+  error: string | null;
+  suggestedScore: number | null;
+  stale: boolean;
+  batchId: string | null;
+  updatedAt: string;
+}
+
+export interface AiGradingBatch {
+  id: string;
+  status: "running" | "done" | "cancelled";
+  provider: string;
+  model: string;
+  total: number;
+  files: number;
+  counts: Record<DraftStatus, number>;
+  createdAt: string;
+  finishedAt: string | null;
+  cancelledAt: string | null;
+}
+
+export interface AiGradingOverview {
+  setup: {
+    provider: AiProviderSummary | null;
+    notice: string;
+    allowStudentWork: boolean;
+    allowStudentFiles: boolean;
+    /** Why drafting cannot run here, or null. */
+    problem: string | null;
+    mode: DraftMode;
+    points: number;
+    limits: { maxChars: number; maxFileMb: number; maxFiles: number; maxPages: number; maxBatch: number };
+  };
+  drafts: AiDraftSummary[];
+  batch: AiGradingBatch | null;
+  note: string;
+}
+
+export interface AiBatchPreview {
+  provider: { name: string; model: string; host: string };
+  mode: DraftMode;
+  submissions: number;
+  files: number;
+  maxChars: number;
+  maxCharsPerSubmission: number;
+  skipped: { studentId: string; name: string; code: string; reason: string }[];
+  alreadyGraded: number;
+  tooMany: boolean;
+  maxSubmissions: number;
+  hourlyLimit: number;
+  usedThisHour: number;
+  note: string;
+}
+
+const gradingBase = (activityId: string) => `/activities/${activityId}/ai/grading`;
+
+export const aiGradingApi = {
+  overview: (activityId: string) => api<AiGradingOverview>(gradingBase(activityId)),
+  draft: (activityId: string, studentId: string) =>
+    api<AiGradingDraftView>(`${gradingBase(activityId)}/drafts`, { method: "POST", body: { studentId } }),
+  get: (activityId: string, studentId: string) =>
+    api<AiGradingDraftView>(`${gradingBase(activityId)}/drafts/${studentId}`),
+  discard: (activityId: string, studentId: string) =>
+    api<void>(`${gradingBase(activityId)}/drafts/${studentId}`, { method: "DELETE" }),
+  preview: (activityId: string) => api<AiBatchPreview>(`${gradingBase(activityId)}/batch/preview`),
+  start: (activityId: string, expectedSubmissions: number) =>
+    api<AiGradingBatch>(`${gradingBase(activityId)}/batch`, { method: "POST", body: { expectedSubmissions } }),
+  batch: (activityId: string, batchId: string) =>
+    api<AiGradingBatch>(`${gradingBase(activityId)}/batch/${batchId}`),
+  cancel: (activityId: string, batchId: string) =>
+    api<AiGradingBatch>(`${gradingBase(activityId)}/batch/${batchId}/cancel`, { method: "POST" }),
+};
+
+/** Plain words for why AI grading drafts cannot run (overview `problem`, draft `errorCode`). */
+export function gradingProblemMessage(code: string | null): string | null {
+  switch (code) {
+    case null:
+      return null;
+    case "AI_NO_PROVIDER":
+      return "AI is not set up: your organisation has not added an AI provider for schools yet.";
+    case "AI_STUDENT_WORK_NOT_ALLOWED":
+      return "Your school does not allow sending students' work to the AI provider. A school admin can change this in Settings.";
+    case "AI_STUDENT_FILES_NOT_ALLOWED":
+      return "Your school does not allow sending uploaded files to the AI provider. A school admin can change this in Settings.";
+    case "AI_NOT_ASSIGNMENT":
+      return "AI grading drafts are for assignments with handed-in work.";
+    case "AI_STUDENT_RESTRICTED":
+      return "This student's record restricts AI processing, so their work is never sent.";
+    case "NOTHING_READABLE":
+      return "Nothing in this hand-in could be read as text (images, scans and other files are not read), so nothing was sent.";
+    case "NOT_HANDED_IN":
+      return "Nothing is handed in.";
+    case "ALREADY_GRADED":
+      return "Marked before the draft ran.";
+    case "ALREADY_DRAFTED":
+      return "Already has an AI draft of this work.";
+    case "CANCELLED":
+      return "Cancelled before it ran.";
+    case "INTERRUPTED":
+      return "Interrupted: ask for this draft again.";
+    case "WAITING_FOR_LIMIT":
+      return "Waiting: you reached your hourly AI limit; it will try again shortly.";
+    default:
+      return null;
+  }
+}
+
+export const FILE_STATUS_LABEL: Record<FileReadStatus, string> = {
+  read: "Read",
+  truncated: "Partly read",
+  unreadable: "Can't read",
+  skipped: "Not read",
+};
+
+export const REQUIREMENT_LABEL: Record<RequirementStatus, string> = {
+  met: "Met",
+  partly: "Partly met",
+  not_met: "Not met",
+};
+
+/** The marks-table badge for a student's draft. */
+export function draftBadge(d: AiDraftSummary | undefined): { label: string; tone: "ready" | "busy" | "problem" | "muted" } | null {
+  if (!d) return null;
+  switch (d.status) {
+    case "ready":
+      return {
+        label: d.stale ? "AI draft (older work)" : d.suggestedScore !== null ? `AI draft: ${d.suggestedScore}` : "AI draft",
+        tone: d.stale ? "muted" : "ready",
+      };
+    case "queued":
+      return { label: d.errorCode === "WAITING_FOR_LIMIT" ? "AI draft waiting" : "AI draft queued", tone: "busy" };
+    case "running":
+      return { label: "AI drafting…", tone: "busy" };
+    case "failed":
+      return { label: d.errorCode === "NOTHING_READABLE" ? "AI: nothing readable" : "AI draft failed", tone: "problem" };
+    case "skipped":
+      return { label: d.errorCode === "AI_STUDENT_RESTRICTED" ? "AI: opted out" : "AI: skipped", tone: "muted" };
+    case "cancelled":
+      return { label: "AI draft cancelled", tone: "muted" };
+  }
+}
+
+/** Finished / total, for the batch progress bar (skipped and cancelled count as finished). */
+export function batchProgress(b: AiGradingBatch): { done: number; total: number; percent: number } {
+  const c = b.counts;
+  const total = c.queued + c.running + c.ready + c.failed + c.skipped + c.cancelled;
+  const done = c.ready + c.failed + c.skipped + c.cancelled;
+  return { done, total, percent: total === 0 ? 100 : Math.round((done / total) * 100) };
+}
+
+/** "12,300 characters" style counts. */
+export function formatChars(n: number): string {
+  return `${n.toLocaleString("en")} character${n === 1 ? "" : "s"}`;
+}
+
+/** The criteria the teacher accepted, as rubric marking picks (criterion id -> level, points, comment). */
+export function acceptedRubricPicks(
+  criteria: RubricDraftCriterion[],
+  accepted: Record<string, boolean>,
+  comments: Record<string, string>,
+): Record<string, { ratingId: string | null; points: number | null; comment: string }> {
+  const out: Record<string, { ratingId: string | null; points: number | null; comment: string }> = {};
+  for (const c of criteria) {
+    if (!accepted[c.criterionId]) continue;
+    out[c.criterionId] = {
+      ratingId: c.ratingId,
+      points: c.points,
+      comment: (comments[c.criterionId] ?? c.comment).trim(),
+    };
+  }
+  return out;
 }

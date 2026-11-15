@@ -17,7 +17,7 @@ import {
 const NOW = new Date('2026-12-10T03:00:00Z');
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
-const ENV = ['NOTIFICATION_RETENTION_DAYS', 'ROSTER_HISTORY_RETENTION_DAYS', 'ATTENDANCE_LOCATION_RETENTION_HOURS'];
+const ENV = ['NOTIFICATION_RETENTION_DAYS', 'AI_GRADING_DRAFT_RETENTION_DAYS', 'ROSTER_HISTORY_RETENTION_DAYS', 'ATTENDANCE_LOCATION_RETENTION_HOURS'];
 
 let saved: Record<string, string | undefined>;
 beforeEach(() => {
@@ -160,5 +160,31 @@ describe('school student-record retention and storage retries', () => {
     expect(schools.purge).not.toHaveBeenCalled();
     expect(prisma.course_notification.findMany).not.toHaveBeenCalled();
     expect(prisma.course_attendance_record.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('AI grading drafts', () => {
+  test('drafts older than 90 days and finished batches are deleted, with no erasure-log entry', async () => {
+    const { prisma, service } = setup();
+    once(prisma.ai_grading_draft.findMany, [{ id: 'd1' }, { id: 'd2' }]);
+    prisma.ai_grading_draft.deleteMany.mockResolvedValue({ count: 2 });
+    const report = await service.purge({ now: NOW });
+    const cutoff = NOW.getTime() - 90 * DAY;
+    expect(prisma.ai_grading_draft.findMany.mock.calls[0][0].where.created_at.lt.getTime()).toBe(cutoff);
+    expect(prisma.ai_grading_draft.deleteMany.mock.calls[0][0]).toEqual({ where: { id: { in: ['d1', 'd2'] } } });
+    expect(prisma.ai_grading_batch.deleteMany.mock.calls[0][0].where).toMatchObject({ status: { not: 'running' } });
+    expect(report.aiGradingDrafts).toBe(2);
+    expect(prisma.erasure_log.create).not.toHaveBeenCalled();
+  });
+
+  test('AI_GRADING_DRAFT_RETENTION_DAYS sets the period; 0 keeps them', async () => {
+    process.env.AI_GRADING_DRAFT_RETENTION_DAYS = '7';
+    const a = setup();
+    await a.service.purge({ now: NOW });
+    expect(a.prisma.ai_grading_draft.findMany.mock.calls[0][0].where.created_at.lt.getTime()).toBe(NOW.getTime() - 7 * DAY);
+    process.env.AI_GRADING_DRAFT_RETENTION_DAYS = '0';
+    const b = setup();
+    await b.service.purge({ now: NOW });
+    expect(b.prisma.ai_grading_draft.findMany).not.toHaveBeenCalled();
   });
 });

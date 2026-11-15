@@ -37,7 +37,7 @@ function view(row: Row | null, setByName: string | null = null): StudentRestrict
  * The student must be in the caller's active school (404 otherwise). Every
  * change is audited (entity `student_restriction`), and switching a flag on
  * removes what it covers right away: similarity fingerprints (and so their
- * matches) for `no_similarity`, cached at-risk rows for
+ * matches) for `no_similarity`, AI grading drafts for `no_ai`, cached at-risk rows for
  * `exclude_from_analytics`.
  */
 @Injectable()
@@ -118,6 +118,10 @@ export class StudentRestrictionService {
       if (next.no_similarity && !before?.no_similarity) {
         // Matches go with their fingerprints (ON DELETE CASCADE).
         await tx.similarity_fingerprint.deleteMany({ where: { submission: { student_id: studentId } } });
+      }
+      if (next.no_ai && !before?.no_ai) {
+        // AI grading drafts made from the student's work go at once.
+        await tx.ai_grading_draft.deleteMany({ where: { student_id: studentId } });
       }
       if (next.exclude_from_analytics && !before?.exclude_from_analytics) {
         await tx.analytics_at_risk.deleteMany({ where: { student_id: studentId } });

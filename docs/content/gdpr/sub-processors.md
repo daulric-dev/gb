@@ -114,11 +114,11 @@ through the API instead.
 | | |
 | --- | --- |
 | Listed when | The feature is on; one recipient per configured AI provider (Anthropic by default for that kind; otherwise the base URL: OpenAI, Azure OpenAI, Mistral AI, Google Gemini API, OpenRouter, Groq, or the host). A local model server on your own network is shown as "the organisation's own server". |
-| Data sent | Staff prompts and the course material they choose (plans, questions, pages). Student work only for rubric feedback suggestions, only where the school turned **Allow sending student work to the AI provider**
-on (off by default; files are never sent), never for a student with **No AI processing**. Before sending, the student's and classmates' names, email addresses and phone-like numbers are replaced with placeholders. |
+| Data sent | Staff prompts and the course material they choose (plans, questions, pages). Student work only for marking suggestions, only where the school turned **Allow sending student work to the AI provider**
+on (off by default); the text read from uploaded text documents (PDF with a text layer, Word .docx, text and code files; never images, scans or the files themselves, cut to a length limit) only where the school also turned **Allow sending uploaded files to the AI provider** on (off by default), never for a student with **No AI processing**. Before sending, the student's and classmates' names, email addresses and phone-like numbers are replaced with placeholders. |
 | Where | The provider's region for your account or deployment. |
 | Check | DPA, location, transfers, whether the provider trains on API data and how long it keeps prompts. GradeBook keeps prompts only if the organisation turns on keeping them (30 days). |
-| Turn off | Switch the feature off for the organisation or a school, remove the provider, keep the school's student-work switch off, or set **No AI processing** on a student. |
+| Turn off | Switch the feature off for the organisation or a school, remove the provider, keep the school's student-work and uploaded-files switches off, or set **No AI processing** on a student. |
 
 ### Translation (feature `translation`, off by default)
 

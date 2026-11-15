@@ -172,13 +172,16 @@ export async function encryptSensitiveText(
       let page: Array<Record<string, string>> = [];
       const ran = await withJobLease(db, LOCK_KEY, BATCH_LEASE_MS, async () => {
         page = await delegate.findMany({
-          where: { [spec.column]: { not: null }, id: { gt: after } },
+          // No `{ not: null }` filter: Prisma rejects it on required columns
+          // (pastoral_note.body); null values are skipped below instead.
+          where: { id: { gt: after } },
           orderBy: { id: 'asc' },
           take: BATCH,
           select: { id: true, [spec.column]: true },
         });
         for (const raw of page) {
           const row = { id: raw.id, value: raw[spec.column] };
+          if (row.value === null || row.value === undefined) continue;
           // Plain text only, unless rotating (then every non-null value).
           if (!opts.rotate && isSealedText(row.value)) continue;
           count.scanned++;
