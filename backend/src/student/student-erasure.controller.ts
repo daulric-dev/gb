@@ -43,8 +43,9 @@ export class StudentErasureController {
   }
 
   /**
-   * What erasing would do to the linked account, for the confirmation:
-   * `{ account: 'none' | 'deleted' | 'unlinked' }`.
+   * What erasing would do, for the confirmation: the linked account
+   * (`account: 'none' | 'deleted' | 'unlinked'`) and how many rows of each
+   * kind go (`counts`, pastoral notes left out).
    */
   @RequirePermission('student', 'erase')
   @Get(':id/erasure-preview')
@@ -55,7 +56,11 @@ export class StudentErasureController {
       select: { user_profile_id: true },
     });
     if (!student) throw new NotFoundException('Student not found');
-    return { account: await this.erasure.linkedAccountOutcome(student.user_profile_id, schoolId) };
+    const [account, counts] = await Promise.all([
+      this.erasure.linkedAccountOutcome(student.user_profile_id, schoolId),
+      this.erasure.previewCounts(id),
+    ]);
+    return { account, counts };
   }
 
   /** Erase the student record for good (step-up). */

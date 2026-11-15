@@ -11,6 +11,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { WebhookEvents } from '@/integrations/events';
 import { isoDate } from '@/common/db-values';
 import { CacheService } from '@/cache/cache.service';
+import { withLeftAt } from '@/student/student-left-at';
 
 /**
  * Ambiguous glyphs are omitted: these codes get read off paper and typed by
@@ -292,13 +293,13 @@ export class StudentMembershipService {
       }
 
       const student = await tx.student.create({
-        data: {
+        data: withLeftAt({
           school_id: code.school_id,
           first_name: profile.first_name,
           last_name: profile.last_name,
           user_profile_id: userId,
           is_active: true,
-        },
+        }, null),
         select: { id: true },
       });
 

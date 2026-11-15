@@ -1,0 +1,11 @@
+/// Ledger of the one-off data steps run by the database setup
+/// (src/database-setup/steps): one row per step key, written in the same
+/// transaction as the step, so each step runs once per database.
+model setup_step {
+  key        String   @id
+  applied_at DateTime @default(now()) @db.Timestamptz(6)
+  /// What the step changed, for operators (counts only, never personal data).
+  summary    String?
+
+  @@schema("public")
+}

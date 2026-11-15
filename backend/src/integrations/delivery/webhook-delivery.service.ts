@@ -181,6 +181,18 @@ export class WebhookDeliveryService {
     const attempts = delivery.attempts + 1;
     const now = new Date();
 
+    if (result.refused === 'plain_http') {
+      // Nothing was sent and a retry cannot help: the delivery fails with
+      // the reason, and the webhook is switched off (once) with the school
+      // told, like a webhook that keeps failing.
+      await this.prisma.webhook_delivery.update({
+        where: { id: deliveryId },
+        data: { ...outcome(result), ...stored, attempts, status: 'failed', next_attempt_at: null },
+      });
+      await this.switchOff(hook, 'Switched off: its URL uses plain http, which is refused. Change it to https://', 'plain_http');
+      return result;
+    }
+
     if (result.ok) {
       await this.prisma.$transaction([
         this.prisma.webhook_delivery.update({
@@ -330,6 +342,38 @@ export class WebhookDeliveryService {
       error: redactValues(result.error, values),
       responseExcerpt: redactValues(result.responseExcerpt, values),
     };
+  }
+
+  /**
+   * Switch a webhook off for a reason that is not a count of failures (a
+   * plain-http URL): once - only the update that flips `enabled` audits and
+   * alerts the school's admins and the organisation admins.
+   */
+  private async switchOff(hook: { id: string; school_id: string; name: string }, reason: string, why: 'plain_http') {
+    try {
+      const flipped = await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.school_webhook.updateMany({
+          where: { id: hook.id, enabled: true },
+          data: { enabled: false, disabled_reason: reason, updated_at: new Date() },
+        });
+        if (count === 0) return false;
+        await this.audit.record(tx, hook.school_id, SYSTEM_ACTOR, [
+          {
+            action: 'webhook_auto_disabled',
+            webhookId: hook.id,
+            webhook: hook.name,
+            changes: { enabled: { before: true, after: false }, reason: why },
+          },
+        ]);
+        return true;
+      });
+      if (flipped) {
+        this.logger.warn(`Webhook ${hook.id} of school ${hook.school_id} switched off: ${reason}`);
+        void this.alerts.plainHttpRefused(hook.school_id, { id: hook.id, name: hook.name }).catch(() => undefined);
+      }
+    } catch (err) {
+      this.logger.error(`Failed to switch off webhook ${hook.id}: ${(err as Error).message}`);
+    }
   }
 
   /**

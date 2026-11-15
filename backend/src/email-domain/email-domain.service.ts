@@ -33,6 +33,7 @@ import {
   txtHasToken,
   VERIFICATION_PREFIX,
 } from './email-domain.util';
+import { withLeftAt } from '@/student/student-left-at';
 
 /** 'any': students and staff share one domain (everyone @srmss.edu.gd). */
 export type DomainAudience = 'student' | 'staff' | 'any';
@@ -819,13 +820,13 @@ export class EmailDomainService {
 
       if (audience === 'student') {
         await tx.student.create({
-          data: {
+          data: withLeftAt({
             school_id: schoolId,
             first_name: profile.first_name,
             last_name: profile.last_name,
             user_profile_id: userId,
             is_active: true,
-          },
+          }, null),
           select: { id: true },
         });
       } else {

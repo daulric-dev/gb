@@ -48,9 +48,10 @@ ENV NODE_ENV=production
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /app/backend/node_modules ./backend/node_modules
 # dist: the compiled API, with the generated Prisma client (src/generated)
-# and the throttle .lua asset. prisma + prisma.config.ts: `prisma migrate
-# deploy` at start. src, scripts and tsconfig.json (its @/ path alias): the
-# TypeScript maintenance scripts (`bun run erasure:replay`, ...).
+# and the throttle .lua asset. prisma + prisma.config.ts: `prisma db push`
+# in the release step at start. src, scripts and tsconfig.json (its @/ path
+# alias): the TypeScript scripts - the release step (`bun run db:release`)
+# and the maintenance scripts (`bun run erasure:replay`, ...).
 COPY --from=build /app/backend/package.json /app/backend/tsconfig.json /app/backend/prisma.config.ts ./backend/
 COPY --from=build /app/backend/prisma ./backend/prisma
 COPY --from=build /app/backend/dist ./backend/dist
@@ -61,8 +62,10 @@ WORKDIR /app/backend
 USER bun
 
 EXPOSE 3001
-# Apply pending Prisma migrations, then start the API. `prisma migrate deploy`
-# takes an advisory lock, so replicas starting together are safe. Set
-# MIGRATE_ON_START=false to run migrations as a separate release step instead
-# (`docker compose run --rm migrate`, or `bunx prisma migrate deploy`).
-CMD ["sh", "-c", "if [ \"${MIGRATE_ON_START:-true}\" != \"false\" ]; then bunx prisma migrate deploy || exit 1; fi; exec bun --bun dist/src/main"]
+# Bring the database up to the schema, then start the API. `bun run
+# db:release` = db:prepare, `prisma db push` (never --accept-data-loss), then
+# db:harden (backend/prisma/DATABASE_PORTABILITY.md), all under a PostgreSQL
+# advisory lock, so replicas starting together take turns. Set
+# MIGRATE_ON_START=false to run it as a separate release step instead
+# (`docker compose --profile release run --rm migrate`).
+CMD ["sh", "-c", "if [ \"${MIGRATE_ON_START:-true}\" != \"false\" ]; then bun run db:release || exit 1; fi; exec bun --bun dist/src/main"]

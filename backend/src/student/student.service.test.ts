@@ -160,6 +160,30 @@ describe('StudentService', () => {
       });
     });
 
+    test('marking a student inactive stamps left_at; editing a name does not touch it', async () => {
+      prisma.student.findFirst.mockResolvedValue(makeStudent({ left_at: null }));
+      prisma.student.update.mockResolvedValue(makeStudent({ is_active: false }));
+      await service.update(USER_ID, 'student-1', { isActive: false } as any);
+      expect(prisma.student.update.mock.calls[0][0].data).toEqual({
+        is_active: false,
+        left_at: expect.any(Date),
+      });
+
+      await service.update(USER_ID, 'student-1', { firstName: 'Jane' } as any);
+      expect(prisma.student.update.mock.calls[1][0].data).toEqual({ first_name: 'Jane' });
+    });
+
+    test('an inactive student staying inactive keeps the original left_at; reactivating clears it', async () => {
+      const leftAt = new Date('2026-01-01T00:00:00Z');
+      prisma.student.findFirst.mockResolvedValue(makeStudent({ is_active: false, left_at: leftAt }));
+      prisma.student.update.mockResolvedValue(makeStudent({ is_active: false }));
+      await service.update(USER_ID, 'student-1', { isActive: false } as any);
+      expect(prisma.student.update.mock.calls[0][0].data.left_at).toEqual(leftAt);
+
+      await service.update(USER_ID, 'student-1', { isActive: true } as any);
+      expect(prisma.student.update.mock.calls[1][0].data).toEqual({ is_active: true, left_at: null });
+    });
+
     test('throws NotFoundException when student not found', () => {
       prisma.student.update.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError('No record', {

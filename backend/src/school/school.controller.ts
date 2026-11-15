@@ -247,7 +247,9 @@ export class SchoolController {
     @Param('requestId') requestId: string,
     @Body() dto: ApproveJoinRequestDto,
   ) {
-    if (dto.role || (dto.customRoleIds?.length ?? 0) > 0) assertSteppedUp(req.user);
+    if (dto.role || (dto.customRoleIds?.length ?? 0) > 0) {
+      assertSteppedUp(req.user as { sessionId?: string; elevatedUntil?: number | null });
+    }
     const userId: string = req.user.id;
     return this.schoolService.approveRequest(
       userId,

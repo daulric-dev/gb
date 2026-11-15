@@ -554,7 +554,9 @@ A failed backup exits non-zero, logs `backup FAILED during '<stage>'`, pings
    app's `S3_*` and `AUTH_SECRET` set; see
    [Retention and erasure](#retention-and-the-right-to-erasure)).
 6. Point `DATABASE_URL` at the restored database and start the API (it runs
-   `prisma migrate deploy` on start, which applies any newer migrations).
+   `bun run db:release` on start, which brings the schema up to date; a
+   backup taken before the switch to `prisma db push` is bridged once, see
+   `backend/prisma/DATABASE_PORTABILITY.md`).
 7. Check: sign in, open a course, a gradebook, a file. Then take a fresh
    backup: `docker compose exec backup backup-now`.
 8. Record the incident and the restore (time taken, data lost) and remove the

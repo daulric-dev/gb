@@ -77,7 +77,52 @@ function entries(prisma: MockPrisma, tx: MockPrisma) {
   });
 }
 
+describe('StudentErasureService.previewCounts', () => {
+  test('counts the rows erasing would delete, per category, never pastoral notes', async () => {
+    const { prisma, service } = setup();
+    prisma.course_student.count.mockResolvedValue(2);
+    prisma.submission.count.mockResolvedValue(7);
+    prisma.activity_accommodation.count.mockResolvedValue(1);
+    prisma.student_accommodation.count.mockResolvedValue(1);
+    const counts = await service.previewCounts(STUDENT);
+    expect(counts).toMatchObject({ enrolments: 2, submissions: 7, accommodations: 2, parentLinks: 0 });
+    expect(counts).not.toHaveProperty('pastoralNotes');
+    expect(prisma.pastoral_note.count).not.toHaveBeenCalled();
+    expect(prisma.submission.count.mock.calls[0][0]).toEqual({ where: { student_id: STUDENT } });
+  });
+});
+
 describe('StudentErasureService.erase', () => {
+  test('unlinking: chat memberships and course notifications in the school are in the replay plan', async () => {
+    const CONV = U(8);
+    const COURSE = U(9);
+    const { prisma, tx, service } = setup({ linked: true });
+    tx.conversation_member.findMany.mockResolvedValue([{ conversation_id: CONV }]);
+    tx.course_notification.findMany.mockResolvedValue([{ course_id: COURSE }]);
+    await service.erase(STUDENT, { schoolId: SCHOOL, actor: ADMIN, reason: 'admin' });
+    const [entry] = entries(prisma, tx);
+    expect(entry.replay.steps).toContainEqual({
+      op: 'delete',
+      table: 'chat.conversation_member',
+      where: { user_id: [USER], conversation_id: [CONV] },
+    });
+    expect(entry.replay.steps).toContainEqual({
+      op: 'delete',
+      table: 'course.course_notification',
+      where: { user_profile_id: [USER], course_id: [COURSE] },
+    });
+  });
+
+  test('data-export ZIPs about the student are deleted from storage right away', async () => {
+    const ZIP = `data-exports/${U(10)}.zip`;
+    const { prisma, storage, service } = setup();
+    storage.objects.set(ZIP, Buffer.from('zip'));
+    prisma.data_export.findMany.mockResolvedValue([{ storage_key: ZIP }]);
+    await service.erase(STUDENT, { schoolId: SCHOOL, actor: ADMIN, reason: 'admin' });
+    expect(prisma.data_export.findMany.mock.calls[0][0].where).toEqual({ student_id: STUDENT, storage_key: { not: null } });
+    expect(storage.objects.has(ZIP)).toBe(false);
+  });
+
   test('a record without an account: rows, roster links and log entry in one transaction; the PDF after commit', async () => {
     const { prisma, tx, storage, service } = setup();
     const result = await service.erase(STUDENT, { schoolId: SCHOOL, actor: ADMIN, reason: 'admin' });

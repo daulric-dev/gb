@@ -22,6 +22,7 @@ import {
   type PurgeKind,
 } from './retention.config';
 import { SchoolRetentionService } from './school-retention.service';
+import { auditStore } from '@/audit-log/audit-store';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Expired or revoked sessions and used or expired sign-in codes kept this long. */
@@ -773,8 +774,9 @@ export class RetentionService {
   /**
    * Audit rows (including the changed-field values) are retained for two
    * years by default, then permanently removed. These tables are protected by
-   * append-only triggers; only this bounded purge opts into the reserved
-   * transaction-local purge path. They are not added to the erasure log: a
+   * append-only triggers on PostgreSQL; this bounded purge goes through
+   * AuditStore.purgeExpired (src/audit-log/audit-store.ts), the only place
+   * that may delete them. They are not added to the erasure log: a
    * restore brings them back only until the next daily purge.
    */
   private async purgeAuditLogs(now: Date, { opts, deadline, report }: Ctx) {
@@ -812,30 +814,21 @@ export class RetentionService {
       'audit log',
       () => this.prisma.audit_log.count({ where }),
       async () => (await this.prisma.audit_log.findMany({ where, select: { id: true }, take: batchSize() })).map((r) => r.id),
-      async (ids) => this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
-        return (await tx.audit_log.deleteMany({ where: { id: { in: ids }, ...where } })).count;
-      }),
+      async (ids) => this.prisma.$transaction((tx) => auditStore(this.prisma).purgeExpired(tx, 'audit_log', ids, before)),
       (count) => { report.auditLogRows += count; },
     );
     await purgeTable(
       'SSO audit log',
       () => this.prisma.sso_audit_log.count({ where }),
       async () => (await this.prisma.sso_audit_log.findMany({ where, select: { id: true }, take: batchSize() })).map((r) => r.id),
-      async (ids) => this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
-        return (await tx.sso_audit_log.deleteMany({ where: { id: { in: ids }, ...where } })).count;
-      }),
+      async (ids) => this.prisma.$transaction((tx) => auditStore(this.prisma).purgeExpired(tx, 'sso_audit_log', ids, before)),
       (count) => { report.ssoAuditLogRows += count; },
     );
     await purgeTable(
       'integration audit log',
       () => this.prisma.integration_audit_log.count({ where }),
       async () => (await this.prisma.integration_audit_log.findMany({ where, select: { id: true }, take: batchSize() })).map((r) => r.id),
-      async (ids) => this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
-        return (await tx.integration_audit_log.deleteMany({ where: { id: { in: ids }, ...where } })).count;
-      }),
+      async (ids) => this.prisma.$transaction((tx) => auditStore(this.prisma).purgeExpired(tx, 'integration_audit_log', ids, before)),
       (count) => { report.integrationAuditLogRows += count; },
     );
   }

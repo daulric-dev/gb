@@ -236,6 +236,14 @@ describe('join codes', () => {
     expect(prisma.course.updateMany).toHaveBeenCalledTimes(2);
   });
 
+  test('a code another course already holds is skipped before writing (every provider)', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.course.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    await service(prisma).regenerateJoinCode(USER, COURSE);
+    expect(prisma.course.count).toHaveBeenCalledTimes(2);
+    expect(prisma.course.updateMany).toHaveBeenCalledTimes(1);
+  });
+
   test('joining upper-cases the code and enrols the student as active', async () => {
     const prisma = db({});
     const course = await service(prisma).joinByCode(
@@ -500,6 +508,20 @@ describe('remove', () => {
       op: 'delete_storage_prefix',
       prefixes: [prefix],
     });
+  });
+
+  test('deleting a course removes roster links of the course and its enrolments, in the replay plan too', async () => {
+    const prisma = db({ courseRole: 'teacher' });
+    prisma.submission.count.mockResolvedValue(0);
+    const ENROLMENT = '99999999-9999-4999-8999-999999999999';
+    prisma.course_student.findMany.mockResolvedValue([{ id: ENROLMENT }]);
+    const cache = createMockCacheService() as any;
+    const erasure = createMockErasureLog();
+    const svc = new CourseService(cache, new CourseAccessService(cache, prisma as any), prisma as any, erasure as any);
+    await svc.remove(USER, COURSE);
+    expect(prisma.roster_link.deleteMany.mock.calls[0][0]).toEqual({ where: { target_id: { in: [COURSE, ENROLMENT] } } });
+    const entry = (erasure.record as any).mock.calls[0][1];
+    expect(entry.replay.steps).toContainEqual({ op: 'delete', table: 'public.roster_link', where: { target_id: [COURSE, ENROLMENT] } });
   });
 });
 

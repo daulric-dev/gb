@@ -15,13 +15,13 @@ as a single schema (`prisma.config.ts` points here).
 | `files.prisma` | `file_manager` | Files, folders, shares, notifications |
 | `chat.prisma` | `chat` | Conversations, members, messages |
 | `compliance.prisma` | `compliance` | The GDPR erasure log (`erasure_log`): ids-only record of every erasure, replayed after a backup restore (see `src/erasure`) |
-| `organisation.prisma` | `public` | The organisation that self-hosts the install (`organisation`, one row; the singleton index is in the migration, Prisma cannot express it; `features` holds its platform feature overrides) its admins (`organisation_admin`) and invites for people without an account yet (`organisation_invite`; its partial unique indexes are in the migration). `school.disabled_features` (in `school.prisma`) holds a school's opt-outs; see `src/features`. |
+| `organisation.prisma` | `public` | The organisation that self-hosts the install (`organisation`, one row: `OrganisationService.setup` re-checks in its transaction, and on PostgreSQL the `organisation_singleton` expression index from `src/database-setup` backs it; `features` holds its platform feature overrides) its admins (`organisation_admin`) and invites for people without an account yet (`organisation_invite`; one open invite per kind and email/school, as partial unique indexes in the schema). `school.disabled_features` (in `school.prisma`) holds a school's opt-outs; see `src/features`. |
 | `integration.prisma` | `public` | School webhooks (`school_webhook`: name, URL - any http(s), events as explicit type keys, signing secret encrypted and bound to the school and webhook, on/off, consecutive failures and why it was switched off), their deliveries (`webhook_delivery`: event id and type, the JSON payload, `pending`/`succeeded`/`failed`/`abandoned`, attempts, next attempt, last status/error, a 1 KB response excerpt; purged after `WEBHOOK_DELIVERY_RETENTION_DAYS`) and the integrations audit log (`integration_audit_log`, never a secret). See `src/integrations`. |
 | `audit.prisma` | `public` | The school- and organisation-scoped, field-level audit log (`audit_log`): actor and school-name snapshots, entity and record id, action, previous/new values, and timestamp. See `src/audit-log` and [the audit log guide](../../../docs/content/guide/audit-log.md). |
 | `sso.prisma` | `public` | Each school's own sign-in apps (`school_sso_provider`, keyed by school and provider `google`/`azure`: on/off, client ID, client secret encrypted and bound to the school and provider, non-secret `settings`); no row = the env fallback. The SSO audit log (`sso_audit_log`): one row per change to a school's SSO settings, never a secret. See `src/sso`. |
 | `report.prisma` | `grading` | Report cards: `report_release` (per school and term: comment deadline, published at/by), `report_comment` (teacher comment per term, course and student, `draft`/`ready`), `report_head_comment` (head / form tutor comment per term and student) and `report_document` (each student's generated term PDF: status, storage key, attempts, error). See `src/report-card`. |
 | `mastery.prisma` | `grading` | Mastery / standards-based grading: `mastery_setting` (one per school: proficiency scale, calculation, score bands, report-card section), `outcome_set`, `outcome` (in a set or a course, nested), `outcome_alignment` (outcome to an activity, rubric criterion or quiz question) and `outcome_evidence` (one per alignment and submission). See `src/mastery`. |
-| `peer-review.prisma` | `grading` | Peer review: `peer_review_setting` (one per assignment: on/off, reviews per student, anonymous, `after_due`/`manual` opening, close date, optional rubric, review-quality points and the offline column holding them, seed, `started_at`, `ready_notified_at`) and `peer_review_allocation` (reviewer, reviewed submission, comment, rubric marks as jsonb, handed in at, hidden by staff; a trigger refuses a reviewer reviewing their own submission). See `src/peer-review`. |
+| `peer-review.prisma` | `grading` | Peer review: `peer_review_setting` (one per assignment: on/off, reviews per student, anonymous, `after_due`/`manual` opening, close date, optional rubric, review-quality points and the offline column holding them, seed, `started_at`, `ready_notified_at`) and `peer_review_allocation` (reviewer, reviewed submission, comment, rubric marks as jsonb, handed in at, hidden by staff; the service refuses a reviewer reviewing their own submission, and on PostgreSQL a trigger from `src/database-setup` backs it). See `src/peer-review`. |
 | `similarity.prisma` | `grading` | Similarity check: `similarity_fingerprint` with indexed `similarity_fingerprint_hash` child rows, `similarity_match` (directed containment score between two fingerprints), `similarity_setting` (per school: pool, recent terms, threshold) and `similarity_school_lock` (serializes fingerprint jobs per school). See `src/similarity`. |
 | `library.prisma` | `course` | The course template library: `library_item` (title, subject, grade level, tags, visibility school/organisation, unpublished), `library_item_version` (immutable design snapshot + counts; files copied under `course-library/`), `library_import` (background import with progress). See `src/course/library`. |
 | `pastoral.prisma` | `student` | Behaviour and pastoral notes: `pastoral_category` (per school, safeguarding flag), `pastoral_note` (student, category, severity, dates, body, follow-up, assignee, status; `is_safeguarding` copied from the category), `pastoral_note_file`, `pastoral_setting` (retention). See `src/pastoral`. |
@@ -30,30 +30,32 @@ as a single schema (`prisma.config.ts` points here).
 | `translation.prisma` | `public` | Machine translation: `translation_setting` (one row: engine `google`/`deepl`/`libre`/`yandex`, LibreTranslate `url`, API key encrypted (`key_enc`, never returned), `allow_private_network`, `enabled`). See `src/translation`. |
 | `rostering.prisma` | `public` | Rostering sync: `roster_source` (CSV or OneRoster 1.2 endpoint; client secret encrypted, bound to the source), `roster_link` (sourcedId -> GradeBook id per source and entity), `roster_run` (dry run / apply status, summary, progress) and `roster_change` (the change set: diff, data, errors, apply status). Also `student.student_number`. See `src/rostering`. |
 | `job-lease.prisma` | `public` | Expiring `job_lease` rows for cross-instance background job coordination and serialized work. See `src/common/job-lease.ts`. |
+| `setup.prisma` | `public` | `setup_step`: the ledger of one-off data steps (key, applied at, summary), one row per step that has run. See `src/database-setup/steps`. |
+| `data-export.prisma`, `minimisation.prisma`, `retention.prisma` | `compliance`, `student`, `public`, `account` | Subject access exports, per-student restrictions, notification opt-outs, pending email changes, school retention settings. Their foreign keys (all `ON DELETE CASCADE`) are declared as relations. |
 
 ## Changing the schema
 
-Prisma Migrate owns the schema. Migrations live in `prisma/migrations`;
-`0_baseline` is the whole schema as it stood when the app left its hosted
-database (row-level security removed). The 58 older SQL migrations it
-replaces are in git history: `git show 13b14d1:supabase/migrations`.
+`prisma db push` owns the tables; there are no migration files (the old SQL
+history is in git, last at commit `181ca40`).
 
 1. Edit the `.prisma` files.
-2. `bun run db:migrate --name <change>` - writes
-   `prisma/migrations/<timestamp>_<change>/migration.sql`, applies it to the
-   development database and regenerates the client. Commit the folder.
-3. Production and fresh checkouts apply pending migrations with
-   `bun run db:deploy` (`prisma migrate deploy`).
+2. `bun run db:deploy` - `db:prepare`, `prisma db push`, `prisma generate`,
+   `db:harden` against the development database.
+3. Production runs `bun run db:release` (the container does it on start).
 
-SQL functions, triggers, extensions and anything else Prisma can't express:
-`bunx prisma migrate dev --create-only --name <change>`, edit the generated
-`migration.sql`, then `bun run db:migrate` to apply it.
+Anything Prisma cannot declare does not go in a SQL file: partial indexes go
+here (`where: raw("...")`, the `partialIndexes` preview - push drops partial
+indexes it does not see); triggers, CHECK constraints and expression indexes
+go in `src/database-setup/postgresql` with a service check for every
+provider; data changes are setup steps (`src/database-setup/steps`). Never use
+`--accept-data-loss`. See [../DATABASE_PORTABILITY.md](../DATABASE_PORTABILITY.md).
 
 `bun run db:pull` re-introspects a database into these files (new models land
-in `main.prisma`; move them to the right file) - useful after a hand-written
-SQL migration adds tables. Re-introspection keeps models in the file they are in and keeps renamed
+in `main.prisma`; move them to the right file). Re-introspection keeps models in the file they are in and keeps renamed
 fields (e.g. `student.legacy_attendance_record`), but drops plain `//`
-comments - keep notes here, not in the `.prisma` files.
+comments - keep notes here, not in the `.prisma` files. It also adds
+comments about CHECK constraints and expression indexes, which are owned by
+`src/database-setup`.
 
 The generated client is written to `src/generated/prisma` (gitignored);
 import it as `@/generated/prisma/client`.

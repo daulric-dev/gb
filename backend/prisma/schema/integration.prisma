@@ -44,7 +44,7 @@ model school_webhook {
 model school_webhook_event {
   webhook_id String         @db.Uuid
   event_type String
-  webhook    school_webhook @relation(fields: [webhook_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  webhook    school_webhook @relation(fields: [webhook_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "school_webhook_event_webhook_fkey")
 
   @@id([webhook_id, event_type])
   @@index([event_type, webhook_id], map: "school_webhook_event_type_idx")
@@ -54,13 +54,13 @@ model school_webhook_event {
 /// A custom header sent with every delivery of one webhook (up to 20 per
 /// webhook), for receivers that expect a key: `Authorization: Bearer ...`,
 /// `X-API-Key: ...`. `name` is an HTTP token (CHECK `^[A-Za-z0-9-]{1,100}$`;
-/// reserved names are refused by the API). The migration adds a unique index
-/// Prisma cannot express: one name per webhook ignoring case
-/// (school_webhook_header_name_key on `(webhook_id, lower(name))`).
+/// reserved names are refused by the API). One name per webhook ignoring
+/// case: planHeaders refuses duplicates, and on PostgreSQL the expression
+/// index school_webhook_header_name_key on `(webhook_id, lower(name))` backs
+/// it (created by src/database-setup; Prisma cannot declare it).
 /// `value_enc` is the value, AES-256-GCM under its own key derived from
 /// DATA_ENCRYPTION_KEY (`v2:`) or AUTH_SECRET (`v1:`), bound to the school, webhook and header id
 /// (src/integrations/webhooks/webhook-secret.ts); never returned or audited.
-/// Never drop that index when diffing: it lives in the migrations only.
 model school_webhook_header {
   id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   webhook_id String         @db.Uuid

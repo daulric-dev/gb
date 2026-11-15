@@ -179,6 +179,7 @@ There is no generator; update this page by hand when the schema changes:
    sweeps (AI requests, LTI launches, data exports).
 5. Take **Erasure** from `src/erasure/account-erasure.ts`,
    `src/erasure/student-erasure.service.ts`, the replay registry in
-   `src/erasure/erasure-plan.ts`, and the foreign keys' `ON DELETE` rules in
-   the migrations.
+   `src/erasure/erasure-plan.ts`, and the foreign keys' `onDelete` rules in
+   `backend/prisma/schema` (every foreign key is declared there; there are
+   no migration files).
 6. Update the date at the top.

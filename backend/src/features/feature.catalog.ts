@@ -229,7 +229,9 @@ export const FEATURES: readonly FeatureDefinition[] = [
     label: 'Analytics',
     description:
       "Course analytics for teachers (submission rates, grade distributions, group averages, weekly trend) and school roll-ups per course and teacher for staff holding analytics:read. The at-risk lists name the students who meet the school's rule-based criteria (low grade, missing work, low attendance or mastery), with the reasons: prompts for staff to look more closely, never automated decisions. A student restricted from analytics is left off those lists. Never shown to students or parents.",
-    default: true,
+    // Off by default (privacy by default, GDPR Art 25): it profiles students,
+    // so an organisation turns it on deliberately.
+    default: false,
     requires: [],
   },
   {

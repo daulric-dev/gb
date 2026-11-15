@@ -7,6 +7,32 @@ import { objectKey } from '@/storage/keys';
 import { compileObjectKeys, compileStep, isUuid, plan, validatePlan, type ReplayStep } from './erasure-plan';
 import { dayPath, toEntry, verifyEntry, type ErasureEntry } from './erasure-log.service';
 import { erasureLogPrefix } from './erasure.config';
+import { auditStore } from '@/audit-log/audit-store';
+
+/**
+ * The account ids of a replayed audit-log step. The only audit change a
+ * replay may make is the actor scrub (clear actor_name/actor_email by
+ * actor_id); anything else in such a step is refused.
+ */
+export function auditScrubActors(step: ReplayStep): string[] {
+  if (step.op !== 'update' || step.table !== 'public.audit_log') {
+    throw new Error('not an audit-log scrub step');
+  }
+  const whereKeys = Object.keys(step.where);
+  const ids = step.where.actor_id;
+  const sets = Object.entries(step.set);
+  if (
+    whereKeys.length !== 1 ||
+    !Array.isArray(ids) ||
+    ids.length === 0 ||
+    !ids.every(isUuid) ||
+    sets.length === 0 ||
+    !sets.every(([col, v]) => (col === 'actor_name' || col === 'actor_email') && v === null)
+  ) {
+    throw new Error('an audit-log replay step may only clear actor_name/actor_email by actor_id');
+  }
+  return ids;
+}
 
 export interface ReplayOptions {
   dryRun?: boolean;
@@ -228,7 +254,9 @@ export class ErasureReplayService {
       for (const step of steps) {
         if (step.op === 'delete_storage_prefix') continue;
         if (step.op === 'update' && step.table === 'public.audit_log') {
-          await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
+          // Audit rows change only through the audit store.
+          result.rows += await auditStore(this.prisma).scrubActor(tx, auditScrubActors(step));
+          continue;
         }
         const { sql, params } = compileStep(step, occurredAt);
         result.rows += await tx.$executeRawUnsafe(sql, ...params);

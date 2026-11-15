@@ -405,7 +405,7 @@ export class PushService implements OnModuleDestroy {
 
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        this.logger.error(`Expo push rejected (${res.status}): ${text.slice(0, 500)}`);
+        this.logger.error(`Expo push rejected (${res.status}): ${redactPushTokens(text.slice(0, 500))}`);
         return [];
       }
 
@@ -423,7 +423,7 @@ export class PushService implements OnModuleDestroy {
           gone.push(to);
         } else {
           this.logger.warn(
-            `Expo push ticket error: ${ticket.details?.error ?? ''} ${ticket.message ?? ''}`,
+            `Expo push ticket error: ${ticket.details?.error ?? ''} ${redactPushTokens(ticket.message ?? '')}`,
           );
         }
       });
@@ -485,7 +485,7 @@ export class PushService implements OnModuleDestroy {
             gone.push(to);
           } else {
             this.logger.warn(
-              `Expo push receipt error: ${receipt.details?.error ?? ''} ${receipt.message ?? ''}`,
+              `Expo push receipt error: ${receipt.details?.error ?? ''} ${redactPushTokens(receipt.message ?? '')}`,
             );
           }
         }
@@ -511,4 +511,13 @@ export class PushService implements OnModuleDestroy {
       );
     }
   }
+}
+
+/**
+ * Expo push tokens (`ExponentPushToken[...]`, `ExpoPushToken[...]`) in text
+ * for the log replaced with a placeholder: Expo echoes them in error bodies
+ * and messages, and a token is enough to send that device notifications.
+ */
+export function redactPushTokens(text: string): string {
+  return text.replace(/(Expo(?:nent)?PushToken)\[[^\]]*\]/g, '$1[redacted]');
 }

@@ -149,6 +149,8 @@ describe('StudentMembershipService.joinByCode', () => {
       last_name: 'Lovelace',
       user_profile_id: USER,
       is_active: true,
+      // An active student has no leaving date (student-left-at.ts).
+      left_at: null,
     });
     // Bound only while still unbound (compare-and-set).
     expect(prisma.user_profile.updateMany.mock.calls[0][0]).toEqual({

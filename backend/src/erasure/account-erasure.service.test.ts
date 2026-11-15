@@ -43,6 +43,19 @@ describe('AccountErasureService.deleteByAdmin', () => {
     expect(storage.objects.size).toBe(0);
   });
 
+  test("the account's data-export ZIPs are deleted from storage right after commit", async () => {
+    const ZIP = `data-exports/${U(9)}.zip`;
+    const { prisma, storage, service } = setup();
+    storage.objects.set(ZIP, Buffer.from('zip'));
+    prisma.data_export.findMany.mockResolvedValue([{ storage_key: ZIP }]);
+    await service.deleteByAdmin(ADMIN, USER);
+    expect(prisma.data_export.findMany.mock.calls[0][0].where).toEqual({
+      OR: [{ requested_by: USER }, { subject_user_id: USER }],
+      storage_key: { not: null },
+    });
+    expect(storage.objects.has(ZIP)).toBe(false);
+  });
+
   test('a school-managed (SSO) student account is not a blocker for an admin', async () => {
     const { tx, service } = setup({ sso: true });
     await service.deleteByAdmin(ADMIN, USER);

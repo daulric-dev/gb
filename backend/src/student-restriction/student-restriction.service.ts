@@ -21,12 +21,13 @@ const SELECT = {
   set_at: true,
 } as const;
 
-function view(row: Row | null): StudentRestrictions {
+function view(row: Row | null, setByName: string | null = null): StudentRestrictions {
   return {
     noAi: row?.no_ai ?? false,
     noSimilarity: row?.no_similarity ?? false,
     excludeFromAnalytics: row?.exclude_from_analytics ?? false,
     setBy: row?.set_by ?? null,
+    setByName,
     setAt: row?.set_at ? row.set_at.toISOString() : null,
   };
 }
@@ -64,7 +65,17 @@ export class StudentRestrictionService {
       where: { student_id: studentId },
       select: SELECT,
     });
-    return view(row);
+    return this.withName(row);
+  }
+
+  /** The view with the name of whoever set the flags (set_by has no foreign key). */
+  private async withName(row: Row | null): Promise<StudentRestrictions> {
+    if (!row?.set_by) return view(row);
+    const p = await this.prisma.user_profile
+      .findUnique({ where: { id: row.set_by }, select: { first_name: true, last_name: true } })
+      .catch(() => null);
+    const name = p ? [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || null : null;
+    return view(row, name);
   }
 
   async update(
@@ -113,6 +124,6 @@ export class StudentRestrictionService {
       }
       return saved;
     });
-    return view(row ?? null);
+    return this.withName(row ?? null);
   }
 }

@@ -54,6 +54,7 @@ import { OrganisationModule } from '@/organisation/organisation.module';
 import { FeaturesModule } from '@/features/features.module';
 import { ErasureModule } from '@/erasure/erasure.module';
 import { RetentionModule } from '@/retention/retention.module';
+import { DatabaseSetupModule } from '@/database-setup/database-setup.module';
 import { AppVersionModule } from '@/app-version/app-version.module';
 import { IntegrationsModule } from '@/integrations/integrations.module';
 import { AuditLogModule } from '@/audit-log/audit-log.module';
@@ -188,6 +189,7 @@ import { HealthService } from '@/health/health.service';
     OrganisationModule,
     ErasureModule,
     RetentionModule,
+    DatabaseSetupModule,
     AppVersionModule,
     IntegrationsModule.forRoot(),
     AuditLogModule,

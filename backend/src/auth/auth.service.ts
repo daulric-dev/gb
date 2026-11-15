@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { EmailCodeService } from '@/account/email-code.service';
-import { redactEmail } from '@/mail/mail.service';
+import { redactEmail, stripEmails } from '@/mail/mail.service';
 import { SessionService, SESSION_TTL_MS } from '@/account/session.service';
 import { AccountService } from '@/account/account.service';
 import { CacheService } from '@/cache/cache.service';
@@ -103,7 +103,7 @@ export class AuthService {
       // A rate limit (429) keeps its own message; any other failure reads as
       // it always has.
       if (err instanceof HttpException && !(err instanceof BadRequestException)) throw err;
-      this.logger.error(`Failed to send OTP to ${redactEmail(email)}: ${String(err)}`);
+      this.logger.error(`Failed to send OTP to ${redactEmail(email)}: ${stripEmails(String(err))}`);
       throw new BadRequestException('Failed to send OTP');
     }
   }

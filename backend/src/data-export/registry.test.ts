@@ -1,11 +1,29 @@
 import { describe, expect, test } from 'bun:test';
 import { COLLECTORS, EXCLUDED, collectorsFor, coveredColumns } from './registry';
-import { scanPersonColumns } from './schema-scan';
+import { scanForeignKeySql, scanPersonColumns } from './schema-scan';
+import { POSTGRES_CHECKS } from '@/database-setup/postgresql/checks';
+import {
+  POSTGRES_EXPRESSION_INDEXES,
+  POSTGRES_FUNCTIONS,
+  POSTGRES_TRIGGERS,
+} from '@/database-setup/postgresql/objects';
+
+/** Every SQL object of the hardening layer, as [table, sql]. */
+function hardeningSql(): [string, string][] {
+  return [
+    ...POSTGRES_CHECKS.map(([table, , sql]) => [table, sql] as [string, string]),
+    ...POSTGRES_TRIGGERS.map((t) => [t.table, t.definition] as [string, string]),
+    ...POSTGRES_EXPRESSION_INDEXES.map((i) => [`${i.schema}.${i.name}`, i.definition] as [string, string]),
+    ...POSTGRES_FUNCTIONS.map((f) => [`${f.schema}.${f.name}`, f.body] as [string, string]),
+  ];
+}
 
 const key = (c: { table: string; column: string }) => `${c.table}.${c.column}`;
 
 describe('data export registry', () => {
-  const scanned = scanPersonColumns();
+  // Person columns from the Prisma schema (relations and id-named uuid
+  // columns) and any person foreign key the PostgreSQL hardening layer adds.
+  const scanned = [...scanPersonColumns(), ...scanForeignKeySql(hardeningSql())];
   const scannedKeys = new Set(scanned.map(key));
 
   test('the schema scan finds the person columns it should', () => {
@@ -21,6 +39,23 @@ describe('data export registry', () => {
       expect(scannedKeys.has(k)).toBe(true);
     }
     expect(scanned.length).toBeGreaterThan(80);
+  });
+
+  test('every Prisma relation to a person is found by the scan', () => {
+    const relations = scanned.filter((c) => c.references !== null);
+    expect(relations.length).toBeGreaterThan(50);
+    expect(relations.map(key)).toContain('compliance.data_export.student_id');
+  });
+
+  test('the hardening-layer scan reads person foreign keys from SQL', () => {
+    const found = scanForeignKeySql([
+      ['public.example', 'ALTER TABLE public.example ADD CONSTRAINT x FOREIGN KEY (owner_id) REFERENCES public.user_profile(id)'],
+      ['grading.example', 'FOREIGN KEY ("pupil_id") REFERENCES student.student (id)'],
+      ['public.other', 'FOREIGN KEY (school_id) REFERENCES public.school(id)'],
+    ]);
+    expect(found.map(key)).toEqual(['public.example.owner_id', 'grading.example.pupil_id']);
+    // Whatever the real layer declares is checked by the coverage test below.
+    for (const c of scanForeignKeySql(hardeningSql())) expect(scannedKeys.has(key(c))).toBe(true);
   });
 
   test('every person column is exported by a collector or excluded with a reason', () => {

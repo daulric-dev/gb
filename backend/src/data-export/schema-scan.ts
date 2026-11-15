@@ -66,3 +66,31 @@ export function scanPersonColumns(dir = DEFAULT_SCHEMA_DIR): PersonColumn[] {
   }
   return out.sort((a, b) => `${a.table}.${a.column}`.localeCompare(`${b.table}.${b.column}`));
 }
+
+/** A person table as the database names it. */
+const PERSON_TABLES = '(public\\.user_profile|student\\.student|account\\.app_user)';
+const FK_RE = new RegExp(
+  `FOREIGN KEY\\s*\\(([^)]+)\\)\\s*REFERENCES\\s+"?${PERSON_TABLES}"?`,
+  'gi',
+);
+
+/**
+ * Person foreign keys declared outside the Prisma schema, in the
+ * PostgreSQL hardening layer (src/database-setup/postgresql): each
+ * `[table, sql]` is scanned for `FOREIGN KEY (col) REFERENCES <person
+ * table>`. Today the layer declares none (Prisma holds every foreign key),
+ * but one added there must be decided on like any other.
+ */
+export function scanForeignKeySql(objects: readonly (readonly [string, string])[]): PersonColumn[] {
+  const out: PersonColumn[] = [];
+  for (const [table, sql] of objects) {
+    for (const m of sql.matchAll(FK_RE)) {
+      const target = m[2].toLowerCase();
+      const references = target.endsWith('user_profile') ? 'user_profile' : target.endsWith('student') ? 'student' : 'app_user';
+      for (const column of m[1].split(',').map((c) => c.trim().replace(/"/g, ''))) {
+        out.push({ table, column, references });
+      }
+    }
+  }
+  return out;
+}

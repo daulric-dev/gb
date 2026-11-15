@@ -116,6 +116,8 @@ export function PendingRequestsTab({
     try {
       await api(`/schools/join-requests/${request.id}/approve`, {
         method: "PATCH",
+        // Assigning roles asks "Confirm it's you" (only answered when needed).
+        stepUp: true,
         body: {
           role: selectedRole.value,
           customRoleIds: [...selectedCustomRoleIds.value],

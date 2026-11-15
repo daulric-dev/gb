@@ -27,7 +27,11 @@ boundary.
 
 Audit entries are written in the same database transaction as the change.
 If the change rolls back, its audit entry rolls back too. The application has
-no endpoint to edit or delete audit entries.
+no endpoint to edit or delete audit entries, and only two internal jobs may
+remove or change them: the retention purge (entries past their retention
+period) and account erasure (clearing an erased person's copied name and
+email). On PostgreSQL, database triggers installed by the release step also
+refuse any other change from the application.
 
 Credentials, passwords, tokens, verification codes, join codes, and private
 keys are redacted before storage. Authentication and session data, read

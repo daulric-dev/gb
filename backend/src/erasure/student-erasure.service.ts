@@ -29,6 +29,22 @@ export interface StudentErasureResult {
   reportFiles: number;
 }
 
+/** Rows erasing a student record would delete, per category (erasure preview). */
+export interface ErasurePreviewCounts {
+  enrolments: number;
+  submissions: number;
+  attendanceRecords: number;
+  attendanceAlerts: number;
+  extensions: number;
+  accommodations: number;
+  reportComments: number;
+  reportDocuments: number;
+  parentLinks: number;
+  parentInvites: number;
+  outcomeEvidence: number;
+  dataExports: number;
+}
+
 export interface StudentErasureOptions {
   /** The school the record must belong to (404 otherwise). */
   schoolId: string;
@@ -94,6 +110,60 @@ export class StudentErasureService {
     return managed && !elsewhere && !blocked ? 'deleted' : 'unlinked';
   }
 
+  /**
+   * How many rows of each kind erasing the record would delete, for the
+   * confirmation. Pastoral notes are left out: whether a student has any
+   * (safeguarding ones especially) is not for every holder of student:erase.
+   */
+  async previewCounts(studentId: string): Promise<ErasurePreviewCounts> {
+    const where = { student_id: studentId };
+    const [
+      enrolments,
+      submissions,
+      attendanceRecords,
+      attendanceAlerts,
+      extensions,
+      accommodations,
+      reportComments,
+      reportDocuments,
+      parentLinks,
+      parentInvites,
+      outcomeEvidence,
+      dataExports,
+    ] = await Promise.all([
+      this.prisma.course_student.count({ where }),
+      this.prisma.submission.count({ where }),
+      this.prisma.course_attendance_record.count({ where }),
+      this.prisma.attendance_alert.count({ where }),
+      this.prisma.activity_extension.count({ where }),
+      Promise.all([
+        this.prisma.activity_accommodation.count({ where }),
+        this.prisma.student_accommodation.count({ where }),
+      ]).then(([a, b]) => (a ?? 0) + (b ?? 0)),
+      this.prisma.report_comment.count({ where }),
+      this.prisma.report_document.count({ where }),
+      this.prisma.parent_student_link.count({ where }),
+      this.prisma.parent_invite.count({ where }),
+      this.prisma.outcome_evidence.count({ where }),
+      this.prisma.data_export.count({ where }),
+    ]);
+    const n = (v: number | undefined | null) => v ?? 0;
+    return {
+      enrolments: n(enrolments),
+      submissions: n(submissions),
+      attendanceRecords: n(attendanceRecords),
+      attendanceAlerts: n(attendanceAlerts),
+      extensions: n(extensions),
+      accommodations: n(accommodations),
+      reportComments: n(reportComments),
+      reportDocuments: n(reportDocuments),
+      parentLinks: n(parentLinks),
+      parentInvites: n(parentInvites),
+      outcomeEvidence: n(outcomeEvidence),
+      dataExports: n(dataExports),
+    };
+  }
+
   async erase(studentId: string, opts: StudentErasureOptions): Promise<StudentErasureResult> {
     const { schoolId } = opts;
     const student = isUuid(studentId)
@@ -105,7 +175,7 @@ export class StudentErasureService {
     if (!student) throw new NotFoundException('Student not found');
     const userId = student.user_profile_id;
 
-    const [docs, enrolments, outcome] = await Promise.all([
+    const [docs, enrolments, outcome, exports] = await Promise.all([
       this.prisma.report_document.findMany({
         where: { student_id: studentId },
         select: { school_id: true, term_id: true, storage_key: true },
@@ -115,7 +185,14 @@ export class StudentErasureService {
         select: { id: true },
       }),
       this.linkedAccountOutcome(userId, schoolId),
+      // Data-export ZIPs about the student: the rows cascade with the
+      // record; the objects go right after commit.
+      this.prisma.data_export.findMany({
+        where: { student_id: studentId, storage_key: { not: null } },
+        select: { storage_key: true },
+      }),
     ]);
+    const exportKeys = (exports ?? []).map((e) => e.storage_key).filter((k): k is string => !!k);
 
     // Report PDFs: the stored key, and the deterministic one in case a
     // generation finished after the row was last updated.
@@ -154,12 +231,32 @@ export class StudentErasureService {
           where: { id: userId, school_id: schoolId },
           data: { school_id: null, role: null },
         });
+        // By id, so the replay plan can name exactly what went.
+        const [conversations, courses] = await Promise.all([
+          tx.conversation_member.findMany({
+            where: { user_id: userId, conversation: { school_id: schoolId } },
+            select: { conversation_id: true },
+          }),
+          tx.course_notification.findMany({
+            where: { user_profile_id: userId, course: { school_id: schoolId } },
+            select: { course_id: true },
+            distinct: ['course_id'],
+          }),
+        ]);
+        const conversationIds = [...new Set((conversations ?? []).map((c) => c.conversation_id))];
+        const courseIds = [...new Set((courses ?? []).map((c) => c.course_id))];
         await tx.conversation_member.deleteMany({
           where: { user_id: userId, conversation: { school_id: schoolId } },
         });
         await tx.course_notification.deleteMany({
           where: { user_profile_id: userId, course: { school_id: schoolId } },
         });
+        if (conversationIds.length > 0) {
+          steps.push(plan.del('chat.conversation_member', { user_id: [userId], conversation_id: conversationIds }));
+        }
+        if (courseIds.length > 0) {
+          steps.push(plan.del('course.course_notification', { user_profile_id: [userId], course_id: courseIds }));
+        }
         steps.push(
           plan.del('public.school_management', { user_id: [userId], school_id: [schoolId] }),
           plan.update(
@@ -188,7 +285,7 @@ export class StudentErasureService {
       }
     });
 
-    await this.erasure.removeObjects([...reportKeys]);
+    await this.erasure.removeObjects([...reportKeys, ...exportKeys]);
     if (accountPrep) await finishAccountErasure({ erasure: this.erasure, cache: this.cache }, accountPrep);
     await Promise.all([
       this.cache.delete(`students:${schoolId}`),

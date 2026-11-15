@@ -14,6 +14,7 @@ model app_user {
   mfa_totp           mfa_totp?
   mfa_recovery_code  mfa_recovery_code[]
   mfa_enrolment_gate mfa_enrolment_gate[]
+  email_change       email_change?
 
   @@schema("account")
 }

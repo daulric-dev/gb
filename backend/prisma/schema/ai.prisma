@@ -18,7 +18,7 @@ model ai_provider {
   api_key_last4 String
   /// Requests per calendar month (UTC) through this provider; null = no cap.
   monthly_cap   Int?
-  /// Exactly one provider is the default (partial unique index ai_provider_one_default, in the migration).
+  /// Exactly one provider is the default (partial unique index ai_provider_one_default).
   is_default    Boolean      @default(false)
   /// The organisation runs this provider on its own private network (a local
   /// Ollama / vLLM server): the SSRF guard allows private / loopback addresses

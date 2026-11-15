@@ -96,6 +96,7 @@ model notification {
   @@index([user_id, created_at(sort: Desc)], map: "idx_file_notification_unread", where: raw("(read_at IS NULL)"))
   @@index([user_id, created_at(sort: Desc)], map: "idx_file_notification_user")
   @@index([file_id], map: "idx_file_notification_file")
+  @@index([created_at], map: "file_notification_created_at_idx")
   @@schema("file_manager")
 }
 

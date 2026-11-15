@@ -29,6 +29,7 @@ import {
   type StudentScope,
 } from '@/permission/student-access';
 import { textSearch } from '@/common/text-search';
+import { withLeftAt } from './student-left-at';
 
 const STUDENT_TTL = 60 * 60 * 24 * 30;
 const DEFAULT_PAGE_SIZE = 20;
@@ -436,9 +437,10 @@ export class StudentService {
         const before = await tx.student.findFirst({
           where: { id: studentId, school_id: schoolId },
         });
+        // Leaving starts the retention clock (left_at); see student-left-at.ts.
         const updated = await tx.student.update({
           where: { id: studentId, school_id: schoolId },
-          data: updateData,
+          data: withLeftAt(updateData, before),
         });
         leaving = dto.isActive === false && before?.is_active !== false;
         if (before) {

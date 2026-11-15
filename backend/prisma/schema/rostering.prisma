@@ -55,6 +55,8 @@ model roster_link {
   @@unique([source_id, entity, sourced_id], map: "roster_link_source_entity_sourced_key")
   @@index([source_id, entity, target_id], map: "roster_link_target_idx")
   @@index([email], map: "roster_link_email_idx")
+  @@index([target_id], map: "roster_link_target_id_idx")
+  @@index([disabled_at], map: "roster_link_disabled_at_idx", where: raw("(disabled_at IS NOT NULL)"))
   @@schema("public")
 }
 

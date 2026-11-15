@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@/generated/prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { auditStore } from './audit-store';
 import { CacheService } from '@/cache/cache.service';
 import {
   effectiveForSchool,
@@ -234,8 +235,7 @@ export class AuditLogService {
         .join(' ')
         .trim() || null;
 
-    const auditRecord = await tx.audit_log.create({
-      data: {
+    const auditRecord = await auditStore(this.prisma).appendAuditLog(tx, {
         scope: schoolId ? 'school' : 'organisation',
         school_id: schoolId,
         school_name: school?.name ?? null,
@@ -246,7 +246,6 @@ export class AuditLogService {
         entity_id: entry.entityId,
         action: entry.action,
         changes: safeValue(entry.changes) as Prisma.InputJsonValue,
-      },
     });
     if (
       schoolId &&

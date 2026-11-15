@@ -91,3 +91,41 @@ export function webhookDisabledEmail(input: WebhookDisabledEmailInput): {
     }),
   };
 }
+
+/**
+ * "Webhook X was switched off: its URL uses plain http": sent once, when a
+ * delivery to an http:// URL (saved before https was required) is refused.
+ */
+export function webhookPlainHttpEmail(input: WebhookTlsDisabledEmailInput): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const subject = `Webhook "${input.webhook}" was switched off for ${input.school}: it uses plain http`;
+  const when = formatWhen(input.at);
+  const intro =
+    `GradeBook refused to send to the webhook "${input.webhook}" because its URL starts with http://, ` +
+    'so deliveries could be read or changed on the way. It has been switched off.';
+  const next =
+    'Change its URL to https:// (the receiving server needs a certificate), then switch it back on. ' +
+    'Deliveries that were refused can be sent again from its delivery list.';
+  const footer =
+    'You are getting this because you administer this school or its organisation on GradeBook.';
+  return {
+    subject,
+    text: [intro, `When: ${when}`, next, `Review: ${input.settingsUrl}`, footer].join('\n\n'),
+    html: accountEmailHtml({
+      title: subject,
+      preheader: intro,
+      heading: 'Webhook switched off: plain http',
+      paragraphs: [intro, next],
+      details: [
+        ['Webhook', input.webhook],
+        ['School', input.school],
+        ['When', when],
+      ],
+      button: { label: 'Review integrations', href: input.settingsUrl },
+      footer,
+    }),
+  };
+}

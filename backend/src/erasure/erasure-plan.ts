@@ -90,6 +90,10 @@ export const REGISTRY: Readonly<Record<string, TableSpec>> = {
   'public.ai_request': { where: ['user_id'], set: { user_id: 'uuid' } },
   'public.push_device': { where: ['user_id'], set: {} },
   'public.roster_link': { where: ['id', 'target_id'], set: { email: 'text', data: 'jsonb' } },
+  // A student record erased while their own account stays: its chat
+  // memberships and course notifications in that school go.
+  'chat.conversation_member': { where: ['user_id', 'conversation_id'], set: {} },
+  'course.course_notification': { where: ['user_profile_id', 'course_id'], set: {} },
   'public.audit_log': {
     where: ['actor_id'],
     set: { actor_name: 'text', actor_email: 'text' },
@@ -235,6 +239,11 @@ export function compileStep(
   occurredAt: Date,
   mode: 'apply' | 'count' = 'apply',
 ): CompiledSql {
+  if (mode === 'apply' && step.table === 'public.audit_log') {
+    // Audit rows change only through AuditStore.scrubActor
+    // (src/audit-log/audit-store.ts); replay calls it for this step.
+    throw new Error('public.audit_log steps are applied through the audit store');
+  }
   const spec = REGISTRY[step.table];
   const table = quoteTable(step.table);
   const params: unknown[] = [];

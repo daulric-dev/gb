@@ -94,9 +94,9 @@ jobs:
           bun run --cwd backend build
           bun run --cwd frontend build
 
-      - name: Applying migrations
+      - name: Creating the database schema
         working-directory: backend
-        run: bunx prisma migrate deploy
+        run: bun run db:release
 
       - name: Generating test secrets
         run: |

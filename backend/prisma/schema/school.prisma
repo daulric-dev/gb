@@ -163,6 +163,8 @@ model school {
   mastery_setting                             mastery_setting?
   outcome_set                                 outcome_set[]
   outcome                                     outcome[]
+  data_export                                 data_export[]
+  school_retention_setting                    school_retention_setting?
   @@index([owner_id], map: "idx_school_owner")
   @@schema("public")
 }
@@ -171,7 +173,7 @@ model school {
 model school_feature_disabled {
   school_id String @db.Uuid
   feature   String
-  school    school @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  school    school @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "school_feature_disabled_school_fkey")
 
   @@id([school_id, feature])
   @@schema("public")
@@ -370,6 +372,10 @@ model user_profile {
   library_import                                                    library_import[]           @relation("library_import_requested_by")
   pastoral_note_authored                                            pastoral_note[]            @relation("pastoral_note_author")
   pastoral_note_assigned                                            pastoral_note[]            @relation("pastoral_note_assignee")
+  data_export_requested                                             data_export[]              @relation("data_export_requested_by")
+  data_export_subject                                               data_export[]              @relation("data_export_subject_user")
+  notification_preference                                           notification_preference?
+  notification_preference_opt_out                                   notification_preference_opt_out[]
 
   @@index([school_id], map: "idx_user_profile_school")
   @@schema("public")

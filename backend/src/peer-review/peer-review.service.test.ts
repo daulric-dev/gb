@@ -408,6 +408,28 @@ describe('allocation in the service', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  test('a review cannot be moved to the author of the submission', async () => {
+    // alloc-1 reviews sub-1, whose author is stu-1.
+    const { service, prisma } = build((p) => {
+      p.submission.findUnique.mockResolvedValue({ id: 'sub-1', activity_id: 'act-1', student_id: 'stu-1' });
+    });
+    await expect(service.reassign('t', 'act-1', 'alloc-1', 'stu-1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.peer_review_allocation.update).not.toHaveBeenCalled();
+  });
+
+  test('allocation refuses the whole batch if a self-review ever slips into it', async () => {
+    const { service, prisma } = build((p) => {
+      p.submission.findMany.mockResolvedValue([{ id: 'sub-1', student_id: 'stu-1' }]);
+      p.course_student.findMany.mockResolvedValue([{ student_id: 'stu-1' }]);
+    });
+    // With one submitter the algorithm finds nobody to review; nothing is
+    // written, and in particular never a self-review.
+    await service.allocateNow(ACTIVITY, { ...SETTING, started_at: null } as any, NOW);
+    for (const call of prisma.peer_review_allocation.createMany.mock.calls) {
+      for (const r of call[0].data) expect(r.reviewer_id).not.toBe('stu-1');
+    }
+  });
+
   test('a review already handed in cannot be reassigned', async () => {
     const { service } = build((p) => {
       p.peer_review_allocation.findUnique.mockResolvedValue({ ...ALLOCATION, submitted_at: NOW });

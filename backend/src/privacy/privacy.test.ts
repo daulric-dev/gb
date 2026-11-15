@@ -125,7 +125,31 @@ describe('buildRecipients', () => {
     expect(ai[1]).toMatchObject({ host: null, internal: true, name: "The organisation's own server" });
     const tr = list.find((r) => r.category === 'translation')!;
     expect(tr).toMatchObject({ name: 'DeepL', host: 'api.deepl.com' });
-    expect(tr.purpose).toContain('never names, grades');
+    expect(tr.purpose).toContain('left out where GradeBook marks them');
+    expect(tr.purpose).toContain('may still contain personal data');
+  });
+
+  test('Google and Yandex are listed only when the server allows uncontracted engines', () => {
+    const src = { features: { translation: true }, translation: { engine: 'yandex', url: null, enabled: true } };
+    expect(buildRecipients(sources(src)).some((r) => r.category === 'translation')).toBe(false);
+    const allowed = buildRecipients(sources({ ...src, env: { TRANSLATION_ALLOW_UNCONTRACTED_ENGINES: 'true' } }));
+    expect(allowed.find((r) => r.category === 'translation')?.name).toBe('Yandex');
+  });
+
+  test('the database host is listed, never its credentials', () => {
+    const list = buildRecipients(sources({ env: { DATABASE_URL: 'postgresql://gb:s3cret@db.eu-west.example.com:5432/gradebook' } }));
+    const db = list.find((r) => r.purpose.includes('database'))!;
+    expect(db).toMatchObject({ category: 'hosting', host: 'db.eu-west.example.com', internal: false });
+    expect(JSON.stringify(list)).not.toContain('s3cret');
+    const internal = buildRecipients(sources({ env: { DATABASE_URL: 'postgresql://gb:x@postgres:5432/gradebook' } }));
+    expect(internal.find((r) => r.purpose.includes('database'))).toMatchObject({ internal: true, host: null });
+  });
+
+  test('push wording follows the push-content defaults', () => {
+    const list = buildRecipients(sources({ features: { push_notifications: true } }));
+    const expo = list.find((r) => r.name === 'Expo')!;
+    expect(expo.purpose).toContain('notices about children');
+    expect(expo.purpose).toContain('course news');
   });
 
   test('a switched-off translation engine is not a recipient', () => {
@@ -207,9 +231,34 @@ describe('catalog', () => {
     expect(loc.period).toContain('24 hours');
     expect(loc.env).toBe('ATTENDANCE_LOCATION_RETENTION_HOURS');
     const custom = retentionTable({ ATTENDANCE_LOCATION_RETENTION_HOURS: '1', BACKUP_RETENTION_DAYS: '14', SOFT_DELETE_RETENTION_DAYS: 'nonsense' });
-    expect(custom.find((r) => r.key === 'attendance_location')!.period).toContain('1 hour;');
+    expect(custom.find((r) => r.key === 'attendance_location')!.period).toContain('within 1 hour of');
     expect(custom.find((r) => r.key === 'backups')!.period).toStartWith('14 days');
     expect(custom.find((r) => r.key === 'soft_deleted')!.period).toContain('30 days');
+  });
+
+  test('retention rows state what the code does: staff sessions, data exports, 0 values, clamps, per-kind overrides', () => {
+    const row = (env: Record<string, string>, key: string) => retentionTable(env).find((r) => r.key === key)!;
+    expect(row({}, 'staff_sessions')).toMatchObject({ env: 'STAFF_SESSION_IDLE_HOURS', period: 'End after 7 days without use' });
+    expect(row({ STAFF_SESSION_IDLE_HOURS: '12' }, 'staff_sessions').period).toBe('End after 12 hours without use');
+    // Never longer than the general idle time.
+    expect(row({ STAFF_SESSION_IDLE_HOURS: '2000', SESSION_IDLE_DAYS: '3' }, 'staff_sessions').period).toBe('End after 3 days without use');
+    expect(row({}, 'staff_sessions_max')).toMatchObject({ env: 'STAFF_SESSION_MAX_DAYS', period: '30 days from sign-in' });
+    expect(row({}, 'data_exports').period).toContain('24 hours');
+    expect(row({ DATA_EXPORT_TTL_HOURS: '1000' }, 'data_exports').period).toContain('168 hours');
+    expect(row({ DATA_EXPORT_TTL_HOURS: '0' }, 'data_exports').period).toContain('1 hour ');
+    // 0 switches these purges off.
+    expect(row({ NOTIFICATION_RETENTION_DAYS: '0' }, 'notifications').period).toContain('switched off');
+    expect(row({ ROSTER_HISTORY_RETENTION_DAYS: '0' }, 'roster_history').period).toContain('switched off');
+    expect(row({ ATTENDANCE_LOCATION_RETENTION_HOURS: '0' }, 'attendance_location').period).toContain('next daily run');
+    expect(row({}, 'attendance_location').period).toContain('accuracy and the location flags are kept');
+    // Clamped to at least a day.
+    expect(row({ AUDIT_LOG_RETENTION_DAYS: '0' }, 'audit_log').period).toBe('1 day');
+    // Out of 1-720: the default.
+    expect(row({ TRANSLATION_CACHE_TTL_HOURS: '5000' }, 'translation_cache').period).toBe('24 hours');
+    expect(row({ TRANSLATION_CACHE_TTL_HOURS: '720' }, 'translation_cache').period).toBe('720 hours');
+    // Per-kind soft-delete overrides.
+    const soft = row({ SOFT_DELETE_RETENTION_DAYS_FILES: '7', SOFT_DELETE_RETENTION_DAYS_CHAT_MESSAGES: '0' }, 'soft_deleted');
+    expect(soft.period).toBe('Hidden at once, erased for good after 30 days (files after 7 days; chat messages at the next daily purge)');
   });
 
   test('lawful bases: defaults, overrides, unknown keys dropped', () => {

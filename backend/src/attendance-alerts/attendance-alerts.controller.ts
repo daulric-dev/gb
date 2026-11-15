@@ -23,7 +23,9 @@ import { PermissionGuard } from '@/permission/permission.guard';
 import { RequirePermission } from '@/permission/require-permission.decorator';
 import { userSchoolId } from '@/common/user-school';
 import { PrismaService } from '@/prisma/prisma.service';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { CacheService } from '@/cache/cache.service';
+import { loadEffectivePermissions } from '@/permission/permission.effective';
 import { AttendanceReportService } from './attendance-report.service';
 import { AttendanceAlertService } from './attendance-alert.service';
 import {
@@ -157,6 +159,7 @@ export class AttendanceAlertController {
   constructor(
     private readonly alerts: AttendanceAlertService,
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
   ) {}
 
   private async school(req: any): Promise<string> {
@@ -193,10 +196,19 @@ export class AttendanceAlertController {
     return this.alerts.updateSettings(req.user.id as string, await this.school(req), dto);
   }
 
+  /**
+   * Every active student of the school with their tutor: student:update
+   * (the guard) and student:read-all, since it lists the whole school.
+   */
   @RequirePermission('student', 'update')
   @Get('form-tutors')
   async formTutors(@Req() req: any) {
-    return this.alerts.formTutors(await this.school(req));
+    const schoolId = await this.school(req);
+    const effective = await loadEffectivePermissions(this.prisma, this.cache, req.user.id as string, schoolId);
+    if (!effective.keys.includes('student:read-all')) {
+      throw new ForbiddenException('Missing permission: student:read-all');
+    }
+    return this.alerts.formTutors(schoolId);
   }
 
   @RequirePermission('student', 'update')

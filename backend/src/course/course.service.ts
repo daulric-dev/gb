@@ -472,6 +472,14 @@ export class CourseService {
           where: { id: courseId },
           select: COURSE_SELECT,
         });
+        // Rostering links naming the course or its enrolments (they hold
+        // the roster record) go with it; target_id has no foreign key.
+        const enrolments = await tx.course_student.findMany({
+          where: { course_id: courseId },
+          select: { id: true },
+        });
+        const rosterTargets = [courseId, ...(enrolments ?? []).map((e) => e.id)];
+        await tx.roster_link.deleteMany({ where: { target_id: { in: rosterTargets } } });
         const { count } = await tx.course.deleteMany({
           where: { id: courseId },
         });
@@ -509,6 +517,7 @@ export class CourseService {
           actor: userId,
           reason: 'admin',
           replay: plan.of(
+            plan.del('public.roster_link', { target_id: rosterTargets }),
             plan.del('course.course', { id: [courseId] }),
             plan.prefixes([courseBannerPrefix(courseId)]),
           ),
@@ -549,6 +558,11 @@ export class CourseService {
     for (let attempt = 0; attempt < 5; attempt++) {
       const joinCode = this.generateJoinCode();
       try {
+        // Codes are generated upper-case, so equality is the case-insensitive
+        // check on every provider; on PostgreSQL the expression index
+        // course_join_code_key (src/database-setup) also settles a race.
+        const taken = await this.prisma.course.count({ where: { join_code: joinCode } });
+        if (taken > 0) continue;
         await this.prisma.course.updateMany({
           where: { id: courseId },
           data: { join_code: joinCode, updated_at: new Date() },

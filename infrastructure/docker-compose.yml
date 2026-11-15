@@ -7,7 +7,7 @@ x-app: &app
     context: ..
     dockerfile: infrastructure/Dockerfile
   # DATABASE_URL, S3_*, SMTP_*, AUTH_SECRET, FRONTEND_URL, etc. come from .env
-  # (see env.example). The image applies `prisma migrate deploy` at start unless
+  # (see env.example). The image runs `bun run db:release` at start unless
   # MIGRATE_ON_START=false. The API listens on PORT (default 3001).
   env_file:
     - .env
@@ -118,7 +118,7 @@ services:
     restart: "no"
     healthcheck:
       disable: true
-    command: ["bunx", "prisma", "migrate", "deploy"]
+    command: ["bun", "run", "db:release"]
 
   # Daily encrypted logical backup of the database (managed or self-hosted):
   # pg_dump | age -> BACKUP_S3_BUCKET at 04:00 (BACKUP_SCHEDULE, in BACKUP_TZ),

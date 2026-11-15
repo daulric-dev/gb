@@ -71,20 +71,50 @@ export interface RetentionItem {
 
 type Env = Record<string, string | undefined>;
 
+/** How a variable's value is read: the same rule as the code that enforces it. */
+type Reader =
+  /** envInt: a whole number >= 0, else the default (src/erasure/erasure.config.ts). */
+  | 'int'
+  /** A whole number clamped into [min, max] (an invalid value is the default first). */
+  | 'clamp'
+  /** In [min, max] or the default (no clamping): TRANSLATION_CACHE_TTL_HOURS. */
+  | 'range'
+  /** A number >= min, else the default (src/account/session.config.ts). */
+  | 'atLeast';
+
 interface RetentionDefinition {
   key: string;
   label: string;
   env?: string;
   unit?: 'days' | 'hours';
   default?: number;
+  read?: Reader;
+  min?: number;
+  max?: number;
   /** Fixed text, or a template where `{n}` is the configured number. */
   text: string;
+  /** What 0 means, for variables where 0 switches the purge off or makes it immediate. */
+  zero?: string;
+  /** Builds the period itself (from the number already read). */
+  period?: (n: number, env: Env) => string;
 }
 
+const SOFT_DELETE_KINDS: readonly [string, string][] = [
+  ['SOFT_DELETE_RETENTION_DAYS_FILES', 'files'],
+  ['SOFT_DELETE_RETENTION_DAYS_FOLDERS', 'folders'],
+  ['SOFT_DELETE_RETENTION_DAYS_CHAT_MESSAGES', 'chat messages'],
+  ['SOFT_DELETE_RETENTION_DAYS_DISCUSSION_REPLIES', 'discussion posts'],
+];
+
+/** "after 30 days", or "at the next daily purge" for 0. */
+const afterDays = (n: number) => (n === 0 ? 'at the next daily purge' : `after ${plural(n, 'days')}`);
+
 /**
- * Retention rows. `env` + `default` must match the code that enforces the
- * period (src/retention, src/account/session.config.ts, ...); the notice
- * reads the same variables so it states what this install does.
+ * Retention rows. `env`, `default` and `read` must match the code that
+ * enforces the period (src/retention/retention.config.ts,
+ * src/account/session.config.ts, src/data-export/data-export.constants.ts,
+ * src/translation/translation.constants.ts, ...); the notice reads the same
+ * variables so it states what this install does.
  */
 const RETENTION: readonly RetentionDefinition[] = [
   {
@@ -98,7 +128,17 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'SOFT_DELETE_RETENTION_DAYS',
     unit: 'days',
     default: 30,
-    text: 'Hidden at once, erased for good after {n}',
+    read: 'int',
+    text: 'Hidden at once, erased for good {after}',
+    // SOFT_DELETE_RETENTION_DAYS_<KIND> overrides the period for one kind.
+    period: (n, env) => {
+      const base = `Hidden at once, erased for good ${afterDays(n)}`;
+      const overrides = SOFT_DELETE_KINDS.flatMap(([name, what]) => {
+        const v = readInt(env, name, n);
+        return v === n ? [] : [`${what} ${afterDays(v)}`];
+      });
+      return overrides.length ? `${base} (${overrides.join('; ')})` : base;
+    },
   },
   {
     key: 'attendance_location',
@@ -106,7 +146,10 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'ATTENDANCE_LOCATION_RETENTION_HOURS',
     unit: 'hours',
     default: 24,
-    text: 'Used for the distance check and cleared within {n}; only the distance is kept',
+    read: 'int',
+    text: 'Used for the distance check and cleared within {n} of the session closing; the distance, its accuracy and the location flags are kept',
+    zero:
+      'Used for the distance check and cleared at the next daily run after the session closes; the distance, its accuracy and the location flags are kept',
   },
   {
     key: 'pastoral',
@@ -119,7 +162,9 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'NOTIFICATION_RETENTION_DAYS',
     unit: 'days',
     default: 180,
+    read: 'int',
     text: '{n}',
+    zero: 'Kept until the account or school is deleted (automatic removal is switched off)',
   },
   {
     key: 'audit_log',
@@ -127,6 +172,8 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'AUDIT_LOG_RETENTION_DAYS',
     unit: 'days',
     default: 730,
+    read: 'clamp',
+    min: 1,
     text: '{n}',
   },
   {
@@ -135,7 +182,9 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'ROSTER_HISTORY_RETENTION_DAYS',
     unit: 'days',
     default: 90,
+    read: 'int',
     text: '{n}',
+    zero: 'Kept until deleted (automatic removal is switched off)',
   },
   {
     key: 'webhook_deliveries',
@@ -143,6 +192,8 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'WEBHOOK_DELIVERY_RETENTION_DAYS',
     unit: 'days',
     default: 30,
+    read: 'clamp',
+    min: 1,
     text: '{n}',
   },
   {
@@ -156,7 +207,21 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'TRANSLATION_CACHE_TTL_HOURS',
     unit: 'hours',
     default: 24,
+    read: 'range',
+    min: 1,
+    max: 720,
     text: '{n}',
+  },
+  {
+    key: 'data_exports',
+    label: 'Data exports (subject access and portability downloads)',
+    env: 'DATA_EXPORT_TTL_HOURS',
+    unit: 'hours',
+    default: 24,
+    read: 'clamp',
+    min: 1,
+    max: 168,
+    text: 'Deleted {n} after they are ready, or at once when the person they are about is erased',
   },
   {
     key: 'sign_in_codes',
@@ -169,6 +234,8 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'SESSION_IDLE_DAYS',
     unit: 'days',
     default: 30,
+    read: 'atLeast',
+    min: 1,
     text: 'End after {n} without use, or when you sign out',
   },
   {
@@ -177,7 +244,34 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'SESSION_MAX_AGE_DAYS',
     unit: 'days',
     default: 90,
+    read: 'atLeast',
+    min: 1,
     text: '{n} from sign-in',
+  },
+  {
+    key: 'staff_sessions',
+    label: 'Staff sessions (staff and school admin accounts)',
+    env: 'STAFF_SESSION_IDLE_HOURS',
+    unit: 'hours',
+    default: 168,
+    read: 'atLeast',
+    min: 1,
+    text: 'End after {n} without use',
+    // Never longer than the general idle time (sessionPolicy).
+    period: (n, env) =>
+      `End after ${duration(Math.min(n, read(env, 'SESSION_IDLE_DAYS', 30, 'atLeast', 1) * 24), 'hours')} without use`,
+  },
+  {
+    key: 'staff_sessions_max',
+    label: 'Longest a staff session can last',
+    env: 'STAFF_SESSION_MAX_DAYS',
+    unit: 'days',
+    default: 30,
+    read: 'atLeast',
+    min: 1,
+    text: '{n} from sign-in',
+    period: (n, env) =>
+      `${duration(Math.min(n, read(env, 'SESSION_MAX_AGE_DAYS', 90, 'atLeast', 1)), 'days')} from sign-in`,
   },
   {
     key: 'known_devices',
@@ -190,6 +284,8 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'BACKUP_RETENTION_DAYS',
     unit: 'days',
     default: 30,
+    read: 'atLeast',
+    min: 1,
     text: '{n}; erased data can remain in a backup until it expires',
   },
   {
@@ -198,21 +294,48 @@ const RETENTION: readonly RetentionDefinition[] = [
     env: 'ERASURE_LOG_RETENTION_DAYS',
     unit: 'days',
     default: 400,
+    read: 'clamp',
+    min: 1,
     text: '{n}',
   },
 ];
 
-/** A positive whole number from the environment, else the default. */
-function configured(env: Env, name: string, fallback: number): number {
+/** envInt's rule: a whole number >= 0, else the default (0 is a real value). */
+function readInt(env: Env, name: string, fallback: number): number {
   const raw = env[name]?.trim();
   if (!raw) return fallback;
   const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+}
+
+/** The value the enforcing code ends up with, by its reading rule. */
+function read(env: Env, name: string, fallback: number, how: Reader, min = 0, max = Infinity): number {
+  switch (how) {
+    case 'int':
+      return readInt(env, name, fallback);
+    case 'clamp':
+      return Math.min(max, Math.max(min, readInt(env, name, fallback)));
+    case 'range': {
+      const n = Number(env[name]);
+      return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
+    }
+    case 'atLeast': {
+      const raw = env[name]?.trim();
+      const n = raw ? Number(raw) : NaN;
+      return Number.isFinite(n) && n >= min ? n : fallback;
+    }
+  }
 }
 
 function plural(n: number, unit: 'days' | 'hours'): string {
   const one = unit === 'days' ? 'day' : 'hour';
   return `${n} ${n === 1 ? one : unit}`;
+}
+
+/** Hours shown as whole days when they divide evenly ("168 hours" is "7 days"). */
+function duration(n: number, unit: 'days' | 'hours'): string {
+  if (unit === 'hours' && n >= 24 && n % 24 === 0) return plural(n / 24, 'days');
+  return plural(n, unit);
 }
 
 /** The retention table for this install. */
@@ -221,13 +344,13 @@ export function retentionTable(env: Env = process.env): RetentionItem[] {
     if (!r.env || !r.unit || r.default === undefined) {
       return { key: r.key, label: r.label, period: r.text };
     }
-    const n = configured(env, r.env, r.default);
-    return {
-      key: r.key,
-      label: r.label,
-      period: r.text.replace('{n}', plural(n, r.unit)),
-      env: r.env,
-    };
+    const n = read(env, r.env, r.default, r.read ?? 'atLeast', r.min ?? (r.read === 'int' ? 0 : 1), r.max);
+    const period = r.period
+      ? r.period(n, env)
+      : n === 0 && r.zero
+        ? r.zero
+        : r.text.replace('{n}', plural(n, r.unit));
+    return { key: r.key, label: r.label, period, env: r.env };
   });
 }
 

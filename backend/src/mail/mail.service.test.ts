@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { MailService, redactEmail } from './mail.service';
+import { MailService, redactEmail, stripEmails } from './mail.service';
 
 function build() {
   const service = new MailService();
@@ -36,5 +36,32 @@ describe('MailService logging', () => {
   test('redactEmail keeps the first letter and the domain', () => {
     expect(redactEmail('jo.smith@school.edu')).toBe('j***@school.edu');
     expect(redactEmail(null)).toBe('***@');
+  });
+});
+
+describe('SMTP errors', () => {
+  test('a failed send is rethrown with addresses redacted, keeping the SMTP code', async () => {
+    const { service, sendMail } = build();
+    sendMail.mockImplementation(async () => {
+      const err = Object.assign(new Error('550 5.1.1 <jane.doe@school.example>: Recipient address rejected'), {
+        code: 'EENVELOPE',
+        responseCode: 550,
+      });
+      throw err;
+    });
+    let caught: any;
+    try {
+      await service.send({ to: 'jane.doe@school.example', subject: 's', text: 't' });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught.message).not.toContain('jane.doe@');
+    expect(caught.message).toContain('j***@school.example');
+    expect(caught.code).toBe('EENVELOPE');
+    expect(caught.responseCode).toBe(550);
+  });
+
+  test('stripEmails redacts every address in text', () => {
+    expect(stripEmails('to a.b@x.org and c@y.co.uk failed')).toBe('to a***@x.org and c***@y.co.uk failed');
   });
 });

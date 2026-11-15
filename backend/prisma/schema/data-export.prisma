@@ -4,10 +4,11 @@
 /// `storage_key` until `expires_at`, then the purge sweep deletes it and marks
 /// the row `expired`. Ids, counts and status only, never the exported data.
 /// The foreign keys (requested_by, subject_user_id -> user_profile; student_id
-/// -> student; school_id -> school; all ON DELETE CASCADE) and the partial
-/// unique expression index `data_export_one_active_key` are in migration
-/// 20261205100000_data_export; they are not declared here so the person
-/// models need no back-relations.
+/// -> student; school_id -> school; all ON DELETE CASCADE) are declared here.
+/// The partial unique expression index `data_export_one_active_key` (one
+/// pending/running export per requester, kind and subject) is created by the
+/// PostgreSQL hardening step (src/database-setup); DataExportService checks it
+/// first on every provider.
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model data_export {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -28,6 +29,10 @@ model data_export {
   completed_at    DateTime? @db.Timestamptz(6)
   expires_at      DateTime? @db.Timestamptz(6)
   downloaded_at   DateTime? @db.Timestamptz(6)
+  requester       user_profile  @relation("data_export_requested_by", fields: [requested_by], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "data_export_requested_by_fkey")
+  subject_user    user_profile? @relation("data_export_subject_user", fields: [subject_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "data_export_subject_user_id_fkey")
+  student         student?      @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "data_export_student_id_fkey")
+  school          school?       @relation(fields: [school_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "data_export_school_id_fkey")
 
   @@index([requested_by, created_at(sort: Desc)], map: "data_export_requested_by_idx")
   @@index([student_id], map: "data_export_student_id_idx")

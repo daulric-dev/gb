@@ -57,7 +57,7 @@ function setup(opts: {
     id: HOOK,
     school_id: SCHOOL,
     name: 'SIS',
-    url: opts.url ?? 'http://sis.internal/hooks',
+    url: opts.url ?? 'https://sis.internal/hooks',
     secret_enc: opts.secretEnc ?? encryptWebhookSecret({ schoolId: SCHOOL, webhookId: HOOK }, 'whsec_x'),
     enabled: opts.enabled ?? true,
     verify_tls: opts.verifyTls ?? true,
@@ -81,7 +81,7 @@ function setup(opts: {
   });
   tx.school_webhook.updateMany.mockResolvedValue({ count: 1 });
   const features = { isEnabled: mock(async () => opts.feature ?? true) };
-  const alerts = { autoDisabled: mock(async () => {}) };
+  const alerts = { autoDisabled: mock(async () => {}), plainHttpRefused: mock(async () => {}) };
   const queue = { addBulk: mock(async () => []) };
   const service = new WebhookDeliveryService(
     prisma as any,
@@ -128,8 +128,10 @@ describe('WebhookDeliveryService.attempt', () => {
   });
 
   test('TLS: http has none (tls_verified null); https verifies by default, or not when off, recorded per attempt', async () => {
-    const http = setup({ verifyTls: false });
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true'; // plain http allowed (private network)
+    const http = setup({ url: 'http://sis.internal/hooks', verifyTls: false });
     await http.service.attempt(DELIVERY);
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
     expect((http.calls[0].init as any).tls).toBeUndefined();
     expect(http.updates()[0].tls_verified).toBeNull();
 
@@ -193,6 +195,34 @@ describe('WebhookDeliveryService.attempt', () => {
     expect(audit).toMatchObject({ action: 'webhook_auto_disabled', actor_via: 'system', actor_id: null, webhook_id: HOOK });
     expect(alerts.autoDisabled).toHaveBeenCalledTimes(1);
     expect((alerts.autoDisabled.mock.calls[0] as any[])[2]).toBe(3);
+  });
+
+  test('a plain-http URL is refused at send time: the delivery fails with the reason, the webhook goes off once and the school is alerted', async () => {
+    delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    const { service, tx, alerts, calls, updates, queue } = setup({ url: 'http://sis.example/hooks' });
+    const r = await service.attempt(DELIVERY);
+    await new Promise((res) => setTimeout(res, 0));
+    expect(r?.refused).toBe('plain_http');
+    expect(calls).toHaveLength(0);
+    expect(updates()[0]).toMatchObject({ status: 'failed', next_attempt_at: null, attempts: 1 });
+    expect(updates()[0].last_error).toContain('plain http');
+    expect(queue.addBulk).not.toHaveBeenCalled();
+    const off = tx.school_webhook.updateMany.mock.calls[0][0];
+    expect(off.where).toEqual({ id: HOOK, enabled: true });
+    expect(off.data.disabled_reason).toContain('plain http');
+    expect(alerts.plainHttpRefused).toHaveBeenCalledTimes(1);
+    expect(alerts.autoDisabled).not.toHaveBeenCalled();
+  });
+
+  test('plain http is sent when WEBHOOK_ALLOW_PRIVATE=true', async () => {
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
+    try {
+      const { service, calls } = setup({ url: 'http://sis.example/hooks' });
+      expect((await service.attempt(DELIVERY))?.ok).toBe(true);
+      expect(calls).toHaveLength(1);
+    } finally {
+      delete process.env.WEBHOOK_ALLOW_PRIVATE;
+    }
   });
 
   test('below the threshold nothing is switched off', async () => {

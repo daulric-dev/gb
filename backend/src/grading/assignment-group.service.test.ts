@@ -48,3 +48,31 @@ describe('AssignmentGroupService audit logging', () => {
     expect(args[3].changes.dropLowest).toEqual({ before: null, after: 1 });
   });
 });
+
+describe('AssignmentGroupService names (unique per course, ignoring case, on every provider)', () => {
+  const build = () => {
+    const prisma = createMockPrisma();
+    const access = { require: async () => ({ course: { id: 'course-1', school_id: 'school-1' }, role: 'teacher' }) };
+    return { prisma, service: new AssignmentGroupService(prisma as any, access as any, undefined as any) };
+  };
+
+  test('creating a group whose name another group has (any case) is a 409, checked before the insert', async () => {
+    const { prisma, service } = build();
+    prisma.assignment_group.count.mockResolvedValue(1);
+    await expect(service.create('u', 'course-1', { name: 'essays' })).rejects.toMatchObject({ status: 409 });
+    expect(prisma.assignment_group.create).not.toHaveBeenCalled();
+    expect(prisma.assignment_group.count.mock.calls[0][0].where).toMatchObject({
+      course_id: 'course-1',
+      name: { equals: 'essays', mode: 'insensitive' },
+    });
+  });
+
+  test('renaming checks every other group of the course', async () => {
+    const { prisma, service } = build();
+    prisma.assignment_group.findFirst.mockResolvedValue({ id: 'g1', course_id: 'course-1', name: 'A', weight: null, position: 0, drop_lowest: 0, drop_highest: 0 });
+    prisma.assignment_group.count.mockResolvedValue(1);
+    await expect(service.update('u', 'course-1', 'g1', { name: 'B' })).rejects.toMatchObject({ status: 409 });
+    expect(prisma.assignment_group.count.mock.calls[0][0].where.NOT).toEqual({ id: 'g1' });
+    expect(prisma.assignment_group.updateManyAndReturn).not.toHaveBeenCalled();
+  });
+});

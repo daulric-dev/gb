@@ -25,6 +25,7 @@ import { objectKey } from '@/storage/keys';
 import { userPermCachePrefix } from '@/permission/permission.effective';
 import type { Db, ErasureLogService } from './erasure-log.service';
 import { plan, userStoragePrefixes, type ErasureReason } from './erasure-plan';
+import { auditStore } from '@/audit-log/audit-store';
 
 /** What is read before the account goes (ids only; nothing is logged from it). */
 export interface AccountErasurePrep {
@@ -35,7 +36,12 @@ export interface AccountErasurePrep {
   schoolIds: string[];
   /** Storage prefixes of the user's own objects (file folders, avatar). */
   prefixes: string[];
-  /** Exact keys of the user's files (also under the prefixes; kept for stores that list slowly). */
+  /**
+   * Exact keys of the user's files (also under the prefixes; kept for stores
+   * that list slowly), and of data-export ZIPs they asked for or that are
+   * about them (the rows cascade; the ZIPs go right after commit rather than
+   * waiting for the expiry sweep).
+   */
   objectKeys: string[];
 }
 
@@ -49,7 +55,7 @@ export async function prepareAccountErasure(
   prisma: PrismaService | Db,
   userId: string,
 ): Promise<AccountErasurePrep> {
-  const [files, profile, memberships] = await Promise.all([
+  const [files, profile, memberships, exports] = await Promise.all([
     prisma.file
       .findMany({
         where: { owner_id: userId },
@@ -61,6 +67,12 @@ export async function prepareAccountErasure(
       .catch(() => null),
     prisma.school_management
       .findMany({ where: { user_id: userId }, select: { school_id: true } })
+      .catch(() => []),
+    prisma.data_export
+      .findMany({
+        where: { OR: [{ requested_by: userId }, { subject_user_id: userId }], storage_key: { not: null } },
+        select: { storage_key: true },
+      })
       .catch(() => []),
   ]);
   const schoolIds = [
@@ -79,9 +91,12 @@ export async function prepareAccountErasure(
       userId,
       (files ?? []).map((f) => f.school_id),
     ),
-    objectKeys: (files ?? []).map((f) =>
-      objectKey(f.bucket as string, f.storage_path as string),
-    ),
+    objectKeys: [
+      ...(files ?? []).map((f) =>
+        objectKey(f.bucket as string, f.storage_path as string),
+      ),
+      ...(exports ?? []).map((e) => e.storage_key).filter((k): k is string => !!k),
+    ],
   };
 }
 
@@ -109,14 +124,10 @@ export async function eraseAccountRows(
   // hold the roster email and the source record.
   await tx.roster_link.deleteMany({ where: { target_id: userId } });
   // Keep the audit events for the two-year retention window, but remove the
-  // copied name and email of the account being erased. The trigger only
-  // permits this update through its transaction-local purge path. Erasure
-  // replay repeats the scrub after restoring a backup.
-  await tx.$queryRaw`SELECT set_config('gradebook.audit_purge', 'on', true)`;
-  await tx.audit_log.updateMany({
-    where: { actor_id: userId },
-    data: { actor_name: null, actor_email: null },
-  });
+  // copied name and email of the account being erased, through the audit
+  // store (the only code allowed to change audit rows). Erasure replay
+  // repeats the scrub after restoring a backup.
+  await auditStore(tx).scrubActor(tx, [userId]);
   await tx.user_profile.deleteMany({ where: { id: userId } });
   // Cascades to sessions and linked sign-in identities.
   await tx.app_user.deleteMany({ where: { id: userId } });

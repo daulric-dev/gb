@@ -223,6 +223,14 @@ export function buildRecipients(src: RecipientSources): Recipient[] {
   const env = src.env;
   const out: (Recipient | null)[] = [];
 
+  // The database: where everything is stored. Host only (hostOf drops the
+  // user name, password, port and database name of DATABASE_URL).
+  if (env.DATABASE_URL?.trim()) {
+    out.push(
+      recipient('hosting', env.DATABASE_URL, 'Stores the GradeBook database: every account, school record and setting'),
+    );
+  }
+
   // Email: sign-in codes, invites, notices.
   const smtp = smtpHost(env);
   if (smtp) {
@@ -261,8 +269,10 @@ export function buildRecipients(src: RecipientSources): Recipient[] {
 
   // Push notifications to the mobile app.
   if (src.features.push_notifications) {
+    // push-content.ts: unless the organisation or school chose otherwise,
+    // notices about children are generic and course news is shown in full.
     const purpose =
-      'Delivers mobile push notifications: the device token and the notification text (only a generic text where the school chose generic notifications)';
+      'Delivers mobile push notifications: the device token and the notification. Unless the organisation or school chose otherwise, notices about children (grades, attendance, parent notices, replies naming a classmate) carry only a generic text, and course news (new work, announcements) its full title and text';
     out.push(recipient('push', 'https://exp.host', purpose, { name: 'Expo' }));
     out.push(recipient('push', 'https://api.push.apple.com', purpose, { name: 'Apple (Push Notification service, iPhone)' }));
     out.push(recipient('push', 'https://fcm.googleapis.com', purpose, { name: 'Google (Firebase Cloud Messaging, Android)' }));
@@ -298,11 +308,15 @@ export function buildRecipients(src: RecipientSources): Recipient[] {
   }
 
   // Translation.
-  if (src.features.translation && src.translation?.enabled) {
+  // Google and Yandex are not used at all unless the server allows them
+  // (TRANSLATION_ALLOW_UNCONTRACTED_ENGINES, translation/engine-policy.ts).
+  const uncontracted = ['google', 'yandex'].includes(src.translation?.engine ?? '');
+  const engineAllowed = !uncontracted || env.TRANSLATION_ALLOW_UNCONTRACTED_ENGINES?.trim().toLowerCase() === 'true';
+  if (src.features.translation && src.translation?.enabled && engineAllowed) {
     const url = src.translation.engine === 'libre' ? src.translation.url : TRANSLATION_HOSTS[src.translation.engine];
     if (url) {
       out.push(
-        recipient('translation', url, 'Translates interface text and course content into the language a person chose; never names, grades, feedback, messages or notes', {
+        recipient('translation', url, 'Translates interface text and course content into the language a person chose. Names, marks, feedback, chat and pastoral notes are left out where GradeBook marks them; text inside course content may still contain personal data', {
           name: src.translation.engine === 'libre' ? undefined : providerName(hostOf(url) ?? '') ?? undefined,
         }),
       );

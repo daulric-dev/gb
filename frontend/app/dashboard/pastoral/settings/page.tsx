@@ -78,6 +78,8 @@ export default function PastoralSettingsPage() {
     try {
       categories.value = await api<PastoralCategory[]>(`/pastoral/categories/${c.id}`, {
         method: "PATCH",
+        // The API asks "Confirm it's you" for every category change.
+        stepUp: true,
         body: patch,
       });
     } catch (err) {

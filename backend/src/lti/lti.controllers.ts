@@ -27,7 +27,7 @@ import { FeatureService } from '@/features/feature.service';
 import { FeatureDisabledException } from '@/features/feature-disabled.exception';
 import { RequireFeature } from '@/features/require-feature.decorator';
 import { OrganisationAdminGuard } from '@/organisation/organisation-admin.guard';
-import { SessionService, sessionTokenVia } from '@/account/session.service';
+import { SessionService, sessionTokenVia, type SessionUser } from '@/account/session.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MfaService } from '@/mfa/mfa.service';
 import { LtiToolService } from './lti-tool.service';
@@ -224,7 +224,7 @@ export class LtiPublicController {
    */
   async sessionUser(req: FastifyRequest): Promise<{ userId: string | null; blocked: boolean }> {
     if (sessionTokenVia(req) !== 'cookie') return { userId: null, blocked: false };
-    let session;
+    let session: SessionUser | null;
     try {
       session = await this.sessions.resolve(req);
     } catch {

@@ -44,6 +44,7 @@ model course_attendance_record {
 
   @@unique([session_id, student_id], map: "attendance_record_session_student_key")
   @@index([course_id, student_id], map: "attendance_record_course_student_idx")
+  @@index([session_id], map: "attendance_record_coordinates_idx", where: raw("((latitude IS NOT NULL) OR (longitude IS NOT NULL))"))
   @@index([student_id])
   @@index([updated_by])
   @@map("attendance_record")
@@ -74,6 +75,7 @@ model attendance_session {
 
   @@index([course_id, opened_at(sort: Desc)], map: "attendance_session_course_id_idx")
   @@index([closes_at], map: "attendance_session_open_idx", where: raw("(closed_at IS NULL)"))
+  @@index([closed_at], map: "attendance_session_coordinates_idx", where: raw("((latitude IS NOT NULL) OR (longitude IS NOT NULL))"))
   @@index([opened_by])
   @@schema("course")
 }
@@ -135,6 +137,7 @@ model course {
   @@index([grade_scale_id])
   @@index([school_id])
   @@index([term_id])
+  @@index([school_id], map: "course_school_template_idx", where: raw("is_template"))
   @@schema("course")
 }
 
@@ -318,5 +321,6 @@ model course_notification {
   @@index([discussion_topic_id], map: "course_notification_discussion_topic_id_idx")
   @@index([activity_id], map: "course_notification_activity_id_idx")
   @@index([announcement_id], map: "course_notification_announcement_id_idx")
+  @@index([created_at], map: "course_notification_created_at_idx")
   @@schema("course")
 }

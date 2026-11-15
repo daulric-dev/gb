@@ -56,7 +56,15 @@ substitute for a deployment-specific security review.
 - **Audit logging** for security-sensitive and school-record actions. The
   daily retention job purges school-record, SSO and integration audit entries
   after two years by default (`AUDIT_LOG_RETENTION_DAYS`); keep the job enabled
-  and set a deployment-specific period where required.
+  and set a deployment-specific period where required. Audit entries are
+  append-only for the application: one module (`AuditStore`) writes them, and
+  only the retention purge and erasure's actor scrub may delete or change
+  them. On PostgreSQL, triggers installed by the release step
+  (`bun run db:release` / `db:harden`) also refuse other updates, deletes
+  and truncation from the application's database role. They do not stop a
+  database owner, who can drop them; restrict direct database access. If
+  the release step's hardening reports failures, these triggers may be
+  missing - run `bun run db:harden` and check it reports no failures.
 - **Input validation** on API endpoints and rate limits on selected
   authentication and sensitive operations
 - **CORS restrictions** based on configured origins

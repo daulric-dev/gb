@@ -86,9 +86,9 @@ fi
 # --- migrations (before any process runs the new code) -----------------------
 
 if [ "${SKIP_MIGRATE:-0}" != "1" ]; then
-  log "prisma migrate deploy"
+  log "db:release (prepare, prisma db push, harden)"
   # prisma.config.ts loads DATABASE_URL from backend/.env.
-  (cd backend && bunx prisma migrate deploy)
+  (cd backend && bun run db:release)
 else
   log "SKIP_MIGRATE=1: not running migrations"
 fi

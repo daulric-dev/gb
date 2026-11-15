@@ -9,6 +9,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AuditLogService, auditChanges } from '@/audit-log/audit-log.service';
 import type { Prisma } from '@/generated/prisma/client';
 import { isUniqueViolation } from '@/common/db-values';
+import { textSearch } from '@/common/text-search';
 import {
   CourseAccessService,
   MANAGE_ROLES,
@@ -81,7 +82,32 @@ export class AssignmentGroupService {
     return this.loadForCourse(courseId);
   }
 
+  /**
+   * Names are unique per course ignoring case. Checked here on every
+   * provider; on PostgreSQL the expression index
+   * assignment_group_course_name_key (src/database-setup) also settles a
+   * race between two requests.
+   */
+  private async requireFreeName(
+    tx: Prisma.TransactionClient,
+    courseId: string,
+    name: string,
+    exceptId?: string,
+  ): Promise<void> {
+    const clashes = await tx.assignment_group.count({
+      where: {
+        course_id: courseId,
+        name: textSearch.equals(name),
+        ...(exceptId ? { NOT: { id: exceptId } } : {}),
+      },
+    });
+    if (clashes > 0) {
+      throw new ConflictException('This course already has a group with that name');
+    }
+  }
+
   private nameConflict(error: unknown): never {
+    if (error instanceof ConflictException) throw error;
     if (isUniqueViolation(error)) {
       throw new ConflictException(
         'This course already has a group with that name',
@@ -120,6 +146,7 @@ export class AssignmentGroupService {
 
     try {
       const data = await this.prisma.$transaction(async (tx) => {
+        await this.requireFreeName(tx, courseId, name);
         const created = await tx.assignment_group.create({
           data: {
             course_id: courseId,
@@ -201,6 +228,9 @@ export class AssignmentGroupService {
           select: GROUP_SELECT,
         });
         if (!before) return undefined;
+        if (typeof changes.name === 'string') {
+          await this.requireFreeName(tx, courseId, changes.name, groupId);
+        }
         const [updated] = await tx.assignment_group.updateManyAndReturn({
           where: { id: groupId, course_id: courseId },
           data: changes,

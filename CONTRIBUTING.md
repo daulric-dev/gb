@@ -109,9 +109,9 @@ CI runs the same checks on every push and pull request; the **CI Gate** status c
 
 **Database** (`backend/prisma/`)
 
-- Change the `.prisma` schema files and add a new migration; never edit a migration that has been applied.
-- Migrations are forward-only. If a change needs a backfill or a two-step rollout, say so in the pull request.
-- Some indexes exist only in SQL because Prisma cannot express them; see `backend/prisma/migrations/README.md` before deleting `DROP INDEX` lines that `migrate dev` generates.
+- There are no SQL migrations: change the `.prisma` schema files and `bun run db:deploy` applies them (`prisma db push`, then the hardening step). Never use `--accept-data-loss`; a change push calls lossy (dropping or retyping a populated column, adding a unique rule to an existing table) needs a data step or a two-step rollout - say so in the pull request.
+- A one-off data change is a setup step (`backend/src/database-setup/steps`): Prisma only, one transaction, runs once per database, no-op on an empty database.
+- What Prisma cannot declare (triggers, CHECKs, expression indexes) is enforced in application code first and recreated on PostgreSQL by `backend/src/database-setup`. Partial indexes go in the schema (`where:`), never in the hardening step. See `backend/prisma/DATABASE_PORTABILITY.md`.
 
 **Frontend** (`frontend/`)
 

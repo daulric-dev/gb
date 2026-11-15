@@ -223,7 +223,7 @@ model submission {
   outcome_evidence outcome_evidence[]
   @@unique([activity_id, student_id], map: "idx_submission_one_per_student")
   @@index([student_id], map: "idx_submission_student")
-  @@index([quiz_expires_at], map: "idx_submission_quiz_expires")
+  @@index([quiz_expires_at], map: "idx_submission_quiz_expires", where: raw("(quiz_expires_at IS NOT NULL)"))
   @@index([activity_id, is_away], map: "idx_submission_is_away", where: raw("(is_away = true)"))
   @@schema("grading")
 }

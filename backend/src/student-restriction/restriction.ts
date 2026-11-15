@@ -23,6 +23,8 @@ export interface StudentRestrictions {
   excludeFromAnalytics: boolean;
   /** Who made the last change (a staff user_profile id) and when; null if never set. */
   setBy: string | null;
+  /** The staff member's name (null when unknown or the account is gone). */
+  setByName: string | null;
   setAt: string | null;
 }
 

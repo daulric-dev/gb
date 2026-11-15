@@ -49,11 +49,36 @@ process), S3 and SMTP services as the Compose stack.
 | Component      | Runtime / version                       | Notes                                                                                                                                                                |
 | -------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Frontend       | Next.js 16 on Node.js 20.9 or newer     | Build with `NEXT_PUBLIC_API_URL` set. Keep the frontend process running with `next start` (the workspace command is `bun run start:prod`).                     |
-| Backend        | The repository's Bun 1.4.4 Docker image | The API listens on `PORT` (default `3001`) on `0.0.0.0`. The image runs pending Prisma migrations at startup unless `MIGRATE_ON_START=false`.                |
-| Database       | PostgreSQL 15 or newer                  | Required. Use any managed or self-hosted PostgreSQL provider in this version range. Apply migrations with `prisma migrate deploy`, not `migrate dev` or `migrate reset`. |
+| Backend        | The repository's Bun 1.4.4 Docker image | The API listens on `PORT` (default `3001`) on `0.0.0.0`. The image brings the database up to the schema at startup (`bun run db:release`) unless `MIGRATE_ON_START=false`.                |
+| Database       | PostgreSQL 15 or newer                  | Required. Use any managed or self-hosted PostgreSQL provider in this version range. The `pg_trgm` extension must be available (it ships with PostgreSQL's contrib package; the release step creates it). Update the schema with `bun run db:release`, never `prisma migrate dev`/`reset` or `db push --accept-data-loss`. |
 | Object storage | S3-compatible service                   | Required for uploads, files, and images. Give the API credentials to one bucket; clients must be able to reach the configured public endpoint for presigned uploads. |
 | Email          | SMTP server/provider                    | Required for email-code sign-in. Configure TLS and a sender address accepted by the provider.                                                                        |
 | Redis          | Redis-compatible service                | Optional for a single API instance. Required and shared by all API instances when horizontally scaling.                                                              |
+
+## Upgrading
+
+GradeBook has no SQL migration files. Each release brings the database up to
+its Prisma schema with `bun run db:release` (the backend image runs it at start
+unless `MIGRATE_ON_START=false`; then run it once as the release step:
+`docker compose --profile release run --rm migrate`). It runs three steps
+under a PostgreSQL advisory lock:
+
+1. `db:prepare` - creates `pg_trgm` and, once, finishes the unreleased SQL
+   migrations on a database built by v1.4.0 or earlier with the old
+   `prisma migrate deploy` (data-preserving conversions `db push` cannot do).
+2. `prisma db push` - creates and alters tables to match the schema. It never
+   runs with `--accept-data-loss`; if it asks for it, the release stops and
+   nothing is dropped.
+3. `db:harden` - recreates what Prisma cannot declare (audit append-only
+   triggers, the student `left_at` and peer-review triggers, expression
+   unique indexes, CHECK constraints) and runs each one-off data step once.
+   Objects already present are left alone.
+
+Before upgrading from v1.4.0 or earlier: back up the database, and make sure
+it is at v1.4.0 (a v1.3 or older database: deploy v1.4.0 first). After the
+release, `bun run db:harden` should report every object `unchanged`. Details,
+the full inventory and what each guarantee rests on:
+[`backend/prisma/DATABASE_PORTABILITY.md`](../../backend/prisma/DATABASE_PORTABILITY.md).
 
 Use the environment-variable reference for the complete configuration and
 secret handling rules: [`Environment Variables`](./environment-variables.md).

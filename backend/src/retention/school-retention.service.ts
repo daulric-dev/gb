@@ -74,7 +74,8 @@ function plusYears(date: Date, years: number): Date {
  * A school's own retention periods for student records (off by default):
  *
  * - leavers: a student made inactive is erased `leaver_retention_days`
- *   after it (student.left_at, kept by a trigger);
+ *   after it (student.left_at, kept by withLeftAt in every is_active write;
+ *   the PostgreSQL trigger student_set_left_at is a backstop);
  * - closed years: a student whose enrolments are all in courses of academic
  *   years that ended `closed_year_retention_years` ago is erased (a course
  *   without an academic year, or a year without an end date, keeps them).

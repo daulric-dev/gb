@@ -119,7 +119,7 @@ export function ParentLinksCard({ studentId }: { studentId: string }) {
                 <UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                 <div className="min-w-0 flex-1" translate="no">
                   <p className="truncate text-sm font-medium">{personName(l.parent, "Parent")}</p>
-                  <p className="truncate text-xs text-muted-foreground">{l.parent.email ?? "No email"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{l.parent.email ?? "Email not shown"}</p>
                 </div>
                 {relationshipText(l.relationship, l.relationshipLabel) && (
                   <Badge variant="outline">{relationshipText(l.relationship, l.relationshipLabel)}</Badge>
@@ -151,7 +151,7 @@ export function ParentLinksCard({ studentId }: { studentId: string }) {
                     <KeyRound className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm" translate={i.kind === "email" ? "no" : undefined}>{i.kind === "email" ? i.email : "Link code"}</p>
+                    <p className="truncate text-sm" translate={i.kind === "email" ? "no" : undefined}>{i.kind === "email" ? (i.email ?? "Email invitation (address hidden)") : "Link code"}</p>
                     <p className="text-xs text-muted-foreground">
                       Expires {new Date(i.expiresAt).toLocaleDateString()}
                     </p>

@@ -26,8 +26,22 @@ export class DataExportController {
 
   @Get()
   @ApiQuery({ name: 'studentId', required: false })
-  list(@Req() req: Req, @Query('studentId') studentId?: string) {
-    return this.exports.list(req.user.id, studentId && UUID.test(studentId) ? studentId : undefined);
+  @ApiQuery({ name: 'kind', required: false, enum: ['self', 'student', 'child'] })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  list(
+    @Req() req: Req,
+    @Query('studentId') studentId?: string,
+    @Query('kind') kind?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.exports.list(req.user.id, {
+      studentId: studentId && UUID.test(studentId) ? studentId : undefined,
+      kind: kind === 'self' || kind === 'student' || kind === 'child' ? kind : undefined,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   /** Your own account. */

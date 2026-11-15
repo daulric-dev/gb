@@ -358,6 +358,7 @@ describe('EmailDomainService.join', () => {
       last_name: 'Bloggs',
       user_profile_id: 'u1',
       is_active: true,
+      left_at: null,
     });
     expect(prisma.school_management.upsert).not.toHaveBeenCalled();
     expect(prisma.user_profile.updateMany.mock.calls[0][0].data).toEqual({

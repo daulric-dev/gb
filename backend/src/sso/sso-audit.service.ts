@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { createHash, X509Certificate } from 'node:crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { Prisma } from '@/generated/prisma/client';
+import { auditStore } from '@/audit-log/audit-store';
 
 /** Which console a change came from. */
 export type SsoActorVia = 'school_admin' | 'organisation_admin';
@@ -123,8 +124,10 @@ export class SsoAuditService {
     entries: SsoAuditEntry[],
   ): Promise<void> {
     if (entries.length === 0) return;
-    await tx.sso_audit_log.createMany({
-      data: entries.map((e) => ({
+    await auditStore(this.prisma).append(
+      tx,
+      'sso_audit_log',
+      entries.map((e) => ({
         school_id: schoolId,
         domain_id: e.domainId ?? null,
         domain: e.domain ?? null,
@@ -133,7 +136,7 @@ export class SsoAuditService {
         action: e.action,
         changes: e.changes as Prisma.InputJsonValue,
       })),
-    });
+    );
   }
 
   /**

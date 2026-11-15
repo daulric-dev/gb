@@ -25,7 +25,7 @@ model timetable_setting {
 model timetable_school_day {
   school_id          String            @db.Uuid
   weekday            Int               @db.SmallInt
-  timetable_setting  timetable_setting @relation(fields: [school_id], references: [school_id], onDelete: Cascade, onUpdate: NoAction)
+  timetable_setting  timetable_setting @relation(fields: [school_id], references: [school_id], onDelete: Cascade, onUpdate: NoAction, map: "timetable_school_day_school_fkey")
 
   @@id([school_id, weekday])
   @@schema("public")

@@ -5,6 +5,7 @@ import {
   PushService,
   RECEIPT_DELAY_MS,
   RETRY_DELAYS_MS,
+  redactPushTokens,
 } from './push.service';
 import { createMockPrisma } from '@/test/prisma-mock';
 
@@ -398,5 +399,16 @@ describe('push content and notification preferences', () => {
       category: 'attendance',
     });
     expect(prisma.push_device.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('push log redaction', () => {
+  test('Expo push tokens never reach the log', () => {
+    const body = '{"errors":[{"message":"\\"ExponentPushToken[abc123XYZ]\\" is not a registered push token"}]} ExpoPushToken[zzz]';
+    const out = redactPushTokens(body);
+    expect(out).not.toContain('abc123XYZ');
+    expect(out).not.toContain('zzz]');
+    expect(out).toContain('ExponentPushToken[redacted]');
+    expect(out).toContain('ExpoPushToken[redacted]');
   });
 });

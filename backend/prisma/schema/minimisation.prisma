@@ -1,8 +1,7 @@
-// Data minimisation and user controls (migration 20261205140000_minimisation).
-// Kept in one file so the models can be found together; each sits in its own
-// database schema. No Prisma relation fields: the foreign keys (all ON DELETE
-// CASCADE) are in the migration, so deleting the student, profile or account
-// removes these rows.
+// Data minimisation and user controls. Kept in one file so the models can be
+// found together; each sits in its own database schema. The foreign keys are
+// all ON DELETE CASCADE, so deleting the student, profile or account removes
+// these rows.
 
 /// Per-student restriction / objection flags (student page, student:update). No row = no restriction.
 model student_restriction {
@@ -16,6 +15,7 @@ model student_restriction {
   /// Staff user_profile id of the last change; no foreign key.
   set_by                 String?  @db.Uuid
   set_at                 DateTime @default(now()) @db.Timestamptz(6)
+  student                student  @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "student_restriction_student_id_fkey")
 
   @@schema("student")
 }
@@ -24,6 +24,7 @@ model student_restriction {
 model notification_preference {
   user_profile_id String   @id @db.Uuid
   updated_at      DateTime @default(now()) @db.Timestamptz(6)
+  user_profile    user_profile @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "notification_preference_user_profile_id_fkey")
 
   @@schema("public")
 }
@@ -33,9 +34,10 @@ model notification_preference_opt_out {
   user_profile_id String   @db.Uuid
   channel         String
   category        String
+  user_profile    user_profile @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "notification_preference_opt_out_user_fkey")
 
   @@id([user_profile_id, channel, category])
-  @@index([channel, category, user_profile_id])
+  @@index([channel, category, user_profile_id], map: "notification_preference_opt_out_lookup_idx")
   @@schema("public")
 }
 
@@ -52,6 +54,7 @@ model email_change {
   sends             Int      @default(1)
   window_started_at DateTime @default(now()) @db.Timestamptz(6)
   created_at        DateTime @default(now()) @db.Timestamptz(6)
+  app_user          app_user @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "email_change_user_id_fkey")
 
   @@index([expires_at], map: "idx_email_change_expires")
   @@schema("account")

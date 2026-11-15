@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import type { Prisma } from '@/generated/prisma/client';
@@ -55,6 +62,8 @@ export interface ExportView {
   createdAt: string;
   completedAt: string | null;
   expiresAt: string | null;
+  /** How long a finished export is kept (DATA_EXPORT_TTL_HOURS, 1-168). */
+  ttlHours: number;
   downloadedAt: string | null;
   byteSize: number | null;
   categories: Record<string, number>;
@@ -180,12 +189,26 @@ export class DataExportService {
 
   // ---- reading ---------------------------------------------------------
 
-  /** The caller's own exports, newest first (optionally about one student). */
-  async list(userId: string, studentId?: string): Promise<ExportView[]> {
+  /**
+   * The caller's own exports, newest first: optionally about one student
+   * and / or of one kind (`self`, `student`, `child`), a page at a time
+   * (`page` from 1, `limit` 1-100, default 50).
+   */
+  async list(
+    userId: string,
+    filter: { studentId?: string; kind?: Kind; page?: number; limit?: number } = {},
+  ): Promise<ExportView[]> {
+    const limit = Math.min(100, Math.max(1, Math.floor(filter.limit ?? 50) || 50));
+    const page = Math.max(1, Math.floor(filter.page ?? 1) || 1);
     const rows = await this.prisma.data_export.findMany({
-      where: { requested_by: userId, ...(studentId ? { student_id: studentId } : {}) },
-      orderBy: { created_at: 'desc' },
-      take: 50,
+      where: {
+        requested_by: userId,
+        ...(filter.studentId ? { student_id: filter.studentId } : {}),
+        ...(filter.kind ? { kind: filter.kind } : {}),
+      },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * limit,
+      take: limit,
     });
     return this.views(rows);
   }
@@ -202,6 +225,14 @@ export class DataExportService {
     const row = await this.own(userId, id);
     if (row.status !== 'ready' || !row.storage_key || !row.expires_at || row.expires_at <= now) {
       throw new BadRequestException('This export is not ready, or has expired');
+    }
+    // Access is checked again: a staff member who lost student:export, a
+    // parent whose link was removed or a feature switched off since the
+    // export was built cannot fetch it any more.
+    try {
+      await this.subjectOf(row);
+    } catch {
+      throw new ForbiddenException('You no longer have access to this export');
     }
     const filename = `gradebook-data-${row.kind}-${(row.completed_at ?? now).toISOString().slice(0, 10)}.zip`;
     const url = await this.storage.downloadUrl(row.storage_key, {
@@ -261,6 +292,7 @@ export class DataExportService {
         createdAt: r.created_at.toISOString(),
         completedAt: r.completed_at?.toISOString() ?? null,
         expiresAt: r.expires_at?.toISOString() ?? null,
+        ttlHours: exportTtlHours(),
         downloadedAt: r.downloaded_at?.toISOString() ?? null,
         byteSize: r.byte_size != null ? Number(r.byte_size) : null,
         categories: (m.categories as Record<string, number>) ?? {},
