@@ -42,7 +42,7 @@ export class ReportReleaseController {
     private readonly audit: AuditLogService,
   ) {}
 
-  @RequirePermission('report-card', 'read')
+  @RequirePermission('report-card', 'read', 'active')
   @Get('terms')
   async terms(@Req() req: any) {
     const userId = req.user.id as string;
@@ -51,7 +51,7 @@ export class ReportReleaseController {
     return result;
   }
 
-  @RequirePermission('report-card', 'read')
+  @RequirePermission('report-card', 'read', 'active')
   @Get('terms/:termId')
   async overview(@Req() req: any, @Param('termId', ParseUUIDPipe) termId: string) {
     const userId = req.user.id as string;
@@ -60,7 +60,7 @@ export class ReportReleaseController {
     return result;
   }
 
-  @RequirePermission('report-card', 'update')
+  @RequirePermission('report-card', 'update', 'active')
   @Patch('terms/:termId')
   async update(
     @Req() req: any,
@@ -70,7 +70,7 @@ export class ReportReleaseController {
     return this.releases.update(req.user.id as string, termId, dto);
   }
 
-  @RequirePermission('report-card', 'read')
+  @RequirePermission('report-card', 'read', 'active')
   @Get('terms/:termId/students')
   async students(@Req() req: any, @Param('termId', ParseUUIDPipe) termId: string) {
     const userId = req.user.id as string;
@@ -79,7 +79,7 @@ export class ReportReleaseController {
     return result;
   }
 
-  @RequirePermission('report-card', 'update')
+  @RequirePermission('report-card', 'update', 'active')
   @Put('terms/:termId/head-comments')
   async headComments(
     @Req() req: any,
@@ -89,7 +89,7 @@ export class ReportReleaseController {
     return this.releases.saveHeadComments(req.user.id as string, termId, dto);
   }
 
-  @RequirePermission('report-card', 'read')
+  @RequirePermission('report-card', 'read', 'active')
   @Get('terms/:termId/students/:studentId/preview')
   @ApiProduces('application/pdf')
   async preview(
@@ -108,7 +108,7 @@ export class ReportReleaseController {
     return sendPdfBytes(res, pdf, 'inline');
   }
 
-  @RequirePermission('report-card', 'read')
+  @RequirePermission('report-card', 'read', 'active')
   @Get('terms/:termId/students/:studentId/file')
   @ApiProduces('application/pdf')
   async file(
@@ -127,19 +127,19 @@ export class ReportReleaseController {
     return sendPdf(res, file);
   }
 
-  @RequirePermission('report-card', 'update')
+  @RequirePermission('report-card', 'update', 'active')
   @Post('terms/:termId/publish')
   async publish(@Req() req: any, @Param('termId', ParseUUIDPipe) termId: string) {
     return this.releases.publish(req.user.id as string, termId);
   }
 
-  @RequirePermission('report-card', 'update')
+  @RequirePermission('report-card', 'update', 'active')
   @Post('terms/:termId/unpublish')
   async unpublish(@Req() req: any, @Param('termId', ParseUUIDPipe) termId: string) {
     return this.releases.unpublish(req.user.id as string, termId);
   }
 
-  @RequirePermission('report-card', 'update')
+  @RequirePermission('report-card', 'update', 'active')
   @Post('terms/:termId/regenerate')
   async regenerate(
     @Req() req: any,
@@ -150,7 +150,7 @@ export class ReportReleaseController {
   }
 
   /** Every generated PDF of the term, or of one course (a class), as a zip. Needs step-up; audited as an export. */
-  @RequirePermission('report-card', 'read')
+  @RequirePermission('report-card', 'read', 'active')
   @RequireStepUp()
   @Get('terms/:termId/reports.zip')
   @ApiProduces('application/zip')
@@ -169,13 +169,13 @@ export class ReportReleaseController {
       .send(archive);
   }
 
-  @RequirePermission('report-card', 'read')
+  @RequirePermission('report-card', 'read', 'active')
   @Get('students/:studentId/transcript')
   async transcript(@Req() req: any, @Param('studentId', ParseUUIDPipe) studentId: string) {
     return this.releases.transcript(req.user.id as string, studentId);
   }
 
-  @RequirePermission('report-card', 'read')
+  @RequirePermission('report-card', 'read', 'active')
   @Get('students/:studentId/transcript.pdf')
   @ApiProduces('application/pdf')
   async transcriptPdf(

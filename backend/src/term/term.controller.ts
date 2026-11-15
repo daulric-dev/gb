@@ -28,7 +28,7 @@ export class TermController {
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('term', 'read')
+  @RequirePermission('term', 'read', 'active')
   @Get()
   async findByYear(@Req() req: any, @Query('yearId') yearId: string) {
     const userId: string = req.user.id;
@@ -36,7 +36,7 @@ export class TermController {
     return this.versioning.resolve(req, 'term.list')(raw);
   }
 
-  @RequirePermission('term', 'read')
+  @RequirePermission('term', 'read', 'active')
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
@@ -44,7 +44,7 @@ export class TermController {
     return this.versioning.resolve(req, 'term.detail')(raw);
   }
 
-  @RequirePermission('term', 'create')
+  @RequirePermission('term', 'create', 'active')
   @Post()
   async create(@Req() req: any, @Body() dto: CreateTermDto) {
     const userId: string = req.user.id;
@@ -52,7 +52,7 @@ export class TermController {
     return this.versioning.resolve(req, 'term.created')(raw);
   }
 
-  @RequirePermission('term', 'update')
+  @RequirePermission('term', 'update', 'active')
   @Patch(':id')
   async update(
     @Req() req: any,
@@ -64,7 +64,7 @@ export class TermController {
     return this.versioning.resolve(req, 'term.updated')(raw);
   }
 
-  @RequirePermission('term', 'delete')
+  @RequirePermission('term', 'delete', 'active')
   @Delete(':id')
   async delete(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;

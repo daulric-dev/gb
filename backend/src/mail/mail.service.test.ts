@@ -64,4 +64,50 @@ describe('SMTP errors', () => {
   test('stripEmails redacts every address in text', () => {
     expect(stripEmails('to a.b@x.org and c@y.co.uk failed')).toBe('to a***@x.org and c***@y.co.uk failed');
   });
+
+  test('stripEmails redacts addresses whose domain ends in digits or hyphens', () => {
+    // An internationalised domain ends in punycode, which has digits and
+    // hyphens in its last label. Requiring that label to be letters would
+    // leave the whole address in the log. Redacting up to the last usable
+    // label keeps the address hidden; the tail after it is not an address.
+    expect(stripEmails('bounced for user@example.xn--p1ai')).toBe(
+      'bounced for u***@example.xn--p1ai',
+    );
+    expect(stripEmails('a@x.org1')).toBe('a***@x.org1');
+    expect(stripEmails('user@mail.example.c0m')).toBe('u***@mail.example.c0m');
+    expect(stripEmails('a@b.co.2x')).toBe('a***@b.co.2x');
+  });
+
+  test('stripEmails leaves text that is not an address alone', () => {
+    for (const text of [
+      'no address here',
+      '@handle at the start',
+      'a@b (no dot in the domain)',
+      'a@b.c (one-letter top level)',
+      'a@b.12 (digits for a top level)',
+      '@ on its own',
+      '',
+    ]) {
+      expect(stripEmails(text)).toBe(text);
+    }
+  });
+
+  test('stripEmails trims trailing punctuation off the domain', () => {
+    expect(stripEmails('bounced for a@x.org.')).toBe('bounced for a***@x.org.');
+    expect(stripEmails('<a@x.org>')).toBe('<a***@x.org>');
+  });
+
+  test('stripEmails handles addresses that run together', () => {
+    expect(stripEmails('a@x.org,b@y.org')).toBe('a***@x.org,b***@y.org');
+  });
+
+  test('stripEmails stays fast on input built to make a pattern backtrack', () => {
+    // The shape that made the old pattern polynomial: a long run of labels
+    // with nothing valid at the end. Linear scanning does not care, so this
+    // finishes immediately; a backtracking matcher would not.
+    const nasty = `a@${'b.'.repeat(5000)}!`;
+    const started = Date.now();
+    expect(stripEmails(nasty)).toBe(nasty);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
 });

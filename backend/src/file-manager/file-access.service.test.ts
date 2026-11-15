@@ -108,6 +108,7 @@ describe('downloadFlagsFor', () => {
     const svc = makeService({});
     const flags = await svc.downloadFlagsFor([], {
       userId: USER,
+      schoolId: SCHOOL,
       roleIds: [],
       courseIds: [],
     });
@@ -142,11 +143,58 @@ describe('downloadFlagsFor', () => {
     });
     const flags = await svc.downloadFlagsFor(['f1', 'f2', 'f3'], {
       userId: USER,
+      schoolId: SCHOOL,
       roleIds: [],
       courseIds: ['c1'],
     });
     expect(flags.get('f1')).toBe(true);
     expect(flags.get('f2')).toBe(false);
     expect(flags.has('f3')).toBe(false);
+  });
+});
+
+describe('share lookups are school-scoped', () => {
+  // A user id or role id is the same value in every school, so the share
+  // query has to say which school's rows it wants. Without the filter a row
+  // in another school naming this user would reach a file here.
+  test('accessFor asks the database for this school only', async () => {
+    const prisma = createMockPrisma();
+    prisma.school_management.findFirst.mockResolvedValue({ id: 'mgmt-1' });
+    prisma.school_management_role.findMany.mockResolvedValue([]);
+    prisma.course_staff.findMany.mockResolvedValue([]);
+    prisma.student.findFirst.mockResolvedValue(null);
+    prisma.course.findMany.mockResolvedValue([]);
+    prisma.file_share.findMany.mockResolvedValue([]);
+    const svc = new FileAccessService(prisma as any);
+
+    await svc.accessFor(USER, SCHOOL, {
+      id: 'f1',
+      owner_id: 'other',
+      status: 'ready',
+    });
+
+    const where = prisma.file_share.findMany.mock.calls.at(-1)?.[0]?.where;
+    expect(where).toMatchObject({ file_id: 'f1', school_id: SCHOOL });
+  });
+
+  test('downloadFlagsFor asks the database for this school only', async () => {
+    const svc = makeService({ shares: [] });
+
+    await svc.downloadFlagsFor(['f1'], {
+      userId: USER,
+      schoolId: SCHOOL,
+      roleIds: [],
+      courseIds: [],
+    });
+
+    const prisma = (svc as any).prisma;
+    const where = prisma.file_share.findMany.mock.calls.at(-1)?.[0]?.where;
+    expect(where).toMatchObject({ school_id: SCHOOL });
+  });
+
+  test('principalsFor records the school it resolved in', async () => {
+    const svc = makeService({ roleIds: ['role-A'] });
+    const principals = await svc.principalsFor(USER, SCHOOL);
+    expect(principals.schoolId).toBe(SCHOOL);
   });
 });

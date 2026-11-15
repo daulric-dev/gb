@@ -8,10 +8,12 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { SessionService } from '@/account/session.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MfaService } from '@/mfa/mfa.service';
 import { FastifyReply, FastifyRequest } from 'fastify';
+import { IS_PUBLIC_KEY } from './public.decorator';
 
 interface AuthenticatedRequest extends FastifyRequest {
   user?: {
@@ -31,11 +33,20 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly sessions: SessionService,
     private readonly prisma: PrismaService,
+    private readonly reflector: Reflector,
     // Global (src/mfa); optional only so unit tests can leave it out.
     @Optional() private readonly mfa?: MfaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // This guard is global (APP_GUARD): every route is authenticated unless
+    // it is marked @Public(). See auth/public.decorator.ts.
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const http = context.switchToHttp();
     const request: AuthenticatedRequest = http.getRequest();
     const reply: FastifyReply = http.getResponse();
@@ -58,8 +69,17 @@ export class AuthGuard implements CanActivate {
       }
       const user = { id: session.userId, email: session.email };
 
-      // A lookup failure fails closed: it falls through to the 503 below,
-      // never letting a possibly deactivated account through.
+      // A lookup *failure* fails closed: it throws, falls through to the 503
+      // below, and never lets a possibly deactivated account through.
+      //
+      // A missing row is a different thing and is allowed: a user has no
+      // profile between their first sign-in and onboarding. It is not a way
+      // for a deleted account to keep a session, because the only code that
+      // deletes a profile (erasure/account-erasure.ts) revokes every session
+      // first and deletes the app_user row in the same transaction, and
+      // SessionService.resolve already refuses a session whose app_user is
+      // gone or carries disabled_at. Any future path that removes a profile
+      // on its own must revoke the sessions with it.
       const profile = await this.prisma.user_profile.findUnique({
         where: { id: user.id },
         select: { is_active: true },

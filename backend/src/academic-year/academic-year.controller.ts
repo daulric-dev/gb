@@ -26,7 +26,7 @@ export class AcademicYearController {
     private readonly versioning: VersioningService,
   ) {}
 
-  @RequirePermission('academic-year', 'create')
+  @RequirePermission('academic-year', 'create', 'active')
   @Post()
   async create(@Req() req: any, @Body() dto: CreateAcademicYearDto) {
     const user_id: string = req.user.id;
@@ -34,7 +34,7 @@ export class AcademicYearController {
     return this.versioning.resolve(req, 'academicYear.created')(raw);
   }
 
-  @RequirePermission('academic-year', 'read')
+  @RequirePermission('academic-year', 'read', 'active')
   @Get()
   async findAll(@Req() req: any) {
     const user_id: string = req.user.id;
@@ -42,7 +42,7 @@ export class AcademicYearController {
     return this.versioning.resolve(req, 'academicYear.list')(raw);
   }
 
-  @RequirePermission('academic-year', 'read')
+  @RequirePermission('academic-year', 'read', 'active')
   @Get('active')
   async findActive(@Req() req: any) {
     const user_id: string = req.user.id;
@@ -50,7 +50,7 @@ export class AcademicYearController {
     return this.versioning.resolve(req, 'academicYear.detail')(raw);
   }
 
-  @RequirePermission('academic-year', 'read')
+  @RequirePermission('academic-year', 'read', 'active')
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
     const user_id: string = req.user.id;
@@ -58,7 +58,7 @@ export class AcademicYearController {
     return this.versioning.resolve(req, 'academicYear.detail')(raw);
   }
 
-  @RequirePermission('academic-year', 'update')
+  @RequirePermission('academic-year', 'update', 'active')
   @Patch(':id')
   async update(
     @Req() req: any,
@@ -70,7 +70,7 @@ export class AcademicYearController {
     return this.versioning.resolve(req, 'academicYear.updated')(raw);
   }
 
-  @RequirePermission('academic-year', 'update')
+  @RequirePermission('academic-year', 'update', 'active')
   @Patch(':id/activate')
   async setActive(@Req() req: any, @Param('id') id: string) {
     const user_id: string = req.user.id;
@@ -78,7 +78,7 @@ export class AcademicYearController {
     return this.versioning.resolve(req, 'academicYear.updated')(raw);
   }
 
-  @RequirePermission('academic-year', 'update')
+  @RequirePermission('academic-year', 'update', 'active')
   @Patch(':id/deactivate')
   async deactivate(@Req() req: any, @Param('id') id: string) {
     const user_id: string = req.user.id;

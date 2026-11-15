@@ -32,13 +32,13 @@ import { CopyCourseDto, ImportCourseContentDto } from './dto/course-copy.dto';
 export class CourseCopyController {
   constructor(private readonly copies: CourseCopyService) {}
 
-  @RequirePermission('course', 'create')
+  @RequirePermission('course', 'create', 'active')
   @Get('templates')
   async templates(@Req() req: any) {
     return this.copies.listTemplates(req.user.id as string);
   }
 
-  @RequirePermission('course', 'create')
+  @RequirePermission('course', 'create', 'course')
   @Post(':courseId/copy')
   async copy(
     @Req() req: any,

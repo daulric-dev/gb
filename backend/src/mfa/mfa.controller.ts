@@ -15,6 +15,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthGuard } from '@/auth/auth.guard';
+import { Public } from '@/auth/public.decorator';
 import { RequireStepUp } from '@/auth/step-up.guard';
 import { OrganisationAdminGuard } from '@/organisation/organisation-admin.guard';
 import { MfaService, type MfaUser } from './mfa.service';
@@ -36,6 +37,7 @@ export class MfaController {
    * answer plus a 6-digit code (or a recovery code). Sets the session like
    * `/auth/otp/verify`.
    */
+  @Public()
   @Post('verify')
   @HttpCode(200)
   @Throttle({

@@ -70,7 +70,7 @@ export class SchoolController {
   // The only school route a catalog permission can guard: every other route
   // here is self-service onboarding (no school context to resolve yet) or
   // staff management behind AdminGuard.
-  @RequirePermission('school', 'read')
+  @RequirePermission('school', 'read', 'active')
   @Get('members')
   async getMembers(@Req() req: any) {
     const userId: string = req.user.id;
@@ -90,7 +90,7 @@ export class SchoolController {
   }
 
   /** Set the active school's upload limit; null returns it to the default. */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Patch('current/upload-limit')
   async updateUploadLimit(@Req() req: any, @Body() dto: UpdateUploadLimitDto) {
     const userId: string = req.user.id;
@@ -107,7 +107,7 @@ export class SchoolController {
    * Platform features for the active school: what the organisation allows,
    * what the school switched off, and what it gets.
    */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get('current/features')
   async getFeatures(@Req() req: any) {
     const schoolId = await this.activeSchool(req.user.id as string);
@@ -115,7 +115,7 @@ export class SchoolController {
   }
 
   /** Switch features off for the school, or back on where allowed. */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Patch('current/features')
   async updateFeatures(@Req() req: any, @Body() dto: UpdateFeaturesDto) {
     const schoolId = await this.activeSchool(req.user.id as string);
@@ -130,7 +130,7 @@ export class SchoolController {
    * The active school's own sign-in apps (Google, Microsoft) and our SAML
    * service provider details. Secrets are never returned.
    */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get('current/sso/providers')
   async getSsoProviders(@Req() req: any) {
     const schoolId = await this.activeSchool(req.user.id as string);
@@ -141,7 +141,7 @@ export class SchoolController {
    * Save one of the active school's sign-in apps. Needs a recent step-up
    * confirmation; logged to the SSO audit log.
    */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @RequireStepUp()
   @Put('current/sso/providers/:key')
   async updateSsoProvider(
@@ -164,7 +164,7 @@ export class SchoolController {
    * The active school's single sign-on activity, newest first: `limit`
    * (default 50, at most 200) and `before` (the id of the last entry shown).
    */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @UseGuards(AdminGuard)
   @QueryMethod('current/sso/audit')
   async getSsoAudit(@Req() req: any, @Body() dto: ListSsoAuditQueryDto) {
@@ -179,7 +179,7 @@ export class SchoolController {
    * A presigned PUT for a new school logo (JPEG, PNG or WebP, at most 2 MB).
    * Members read the logo from their profile (`school.logo_url`).
    */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('current/logo/upload-ticket')
   async logoTicket(@Req() req: any, @Body() dto: CreateResumableUploadDto) {
     const schoolId = await this.activeSchool(req.user.id as string);
@@ -187,7 +187,7 @@ export class SchoolController {
   }
 
   /** Verify the uploaded logo and set it; returns `{ logoUrl }`. */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('current/logo/complete')
   @HttpCode(200)
   async logoComplete(@Req() req: any, @Body() dto: CompleteUploadDto) {
@@ -196,7 +196,7 @@ export class SchoolController {
   }
 
   /** Remove the logo; clients fall back to the app mark. */
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Delete('current/logo')
   async logoRemove(@Req() req: any) {
     const schoolId = await this.activeSchool(req.user.id as string);

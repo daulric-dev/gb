@@ -3,11 +3,17 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module.js';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { insecureCookieWarning, isOriginAllowed, primaryOrigin } from './config/origins';
+import {
+  insecureCookieWarning,
+  isOriginAllowed,
+  primaryOrigin,
+  sharedCookieDomainWarning,
+} from './config/origins';
 import cookie from '@fastify/cookie';
 import { acceptEmptyQueryBodies, CORS_METHODS } from './common/http-query';
 import { AppExceptionFilter } from './common/exception.filter';
 import { HealthService } from './health/health.service';
+import { isInternalPeer } from './health/health-peer';
 import { registerCsrfProtection, useBodyParsers } from './common/csrf';
 
 const trustProxyHops = (() => {
@@ -70,9 +76,17 @@ export async function createApp(): Promise<NestFastifyApplication> {
     return res.redirect(`${origin}/privacy`, 302);
   });
 
-  raw_instance.get('/health', async (_, res) => {
+  // Which dependency is down is operational detail, so it only goes to
+  // callers on the private network (Compose, the cluster). Everyone else gets
+  // the verdict and the same status code, which is all a load balancer needs.
+  raw_instance.get('/health', async (req, res) => {
     const health = await app.get(HealthService).check();
-    res.status(health.status === 'ok' ? 200 : 503).send(health);
+    const status = health.status === 'ok' ? 200 : 503;
+    if (!isInternalPeer(req)) {
+      res.status(status).send({ status: health.status });
+      return;
+    }
+    res.status(status).send(health);
   });
 
   app.enableCors({
@@ -92,8 +106,10 @@ export async function createApp(): Promise<NestFastifyApplication> {
   });
 
   await app.init();
-  const cookieWarning = insecureCookieWarning();
-  if (cookieWarning) new Logger('Auth').warn(cookieWarning);
+  const authLog = new Logger('Auth');
+  for (const warning of [insecureCookieWarning(), sharedCookieDomainWarning()]) {
+    if (warning) authLog.warn(warning);
+  }
 
   return app;
 }

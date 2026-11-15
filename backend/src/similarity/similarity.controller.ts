@@ -65,13 +65,13 @@ export class SimilarityController {
 export class SchoolSimilarityController {
   constructor(private readonly similarity: SimilarityService) {}
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Get()
   async get(@Req() req: any) {
     return this.similarity.getSchoolSettings(req.user.id as string);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Put()
   async update(@Req() req: any, @Body() dto: SimilaritySettingsDto) {
     return this.similarity.updateSchoolSettings(req.user.id as string, dto);

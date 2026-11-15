@@ -196,6 +196,51 @@ describe('DATA_ENCRYPTION_KEY in production', () => {
   });
 });
 
+describe('AUTH_COOKIE_SECURE in production', () => {
+  const prod = {
+    NODE_ENV: 'production',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/gradebook',
+    AUTH_SECRET: 'x'.repeat(32),
+    DATA_ENCRYPTION_KEY: 'k'.repeat(32),
+    API_URL: 'https://api.example.com',
+    FRONTEND_URL: 'https://app.example.com',
+  };
+
+  test('refuses the insecure-cookie override', () => {
+    expect(() =>
+      validateStartupConfig({ ...prod, AUTH_COOKIE_SECURE: 'false' }),
+    ).toThrow('AUTH_COOKIE_SECURE=false is not allowed in production');
+  });
+
+  test('allows it for a local preview build', () => {
+    expect(() =>
+      validateStartupConfig({
+        ...prod,
+        AUTH_COOKIE_SECURE: 'false',
+        LOCAL_PREVIEW: 'true',
+        FRONTEND_URL: 'http://localhost:3000',
+      }),
+    ).not.toThrow();
+  });
+
+  test('allows it outside production', () => {
+    expect(() =>
+      validateStartupConfig({
+        NODE_ENV: 'development',
+        DATABASE_URL: prod.DATABASE_URL,
+        AUTH_COOKIE_SECURE: 'false',
+      }),
+    ).not.toThrow();
+  });
+
+  test('leaves the secure default alone', () => {
+    expect(() => validateStartupConfig(prod)).not.toThrow();
+    expect(() =>
+      validateStartupConfig({ ...prod, AUTH_COOKIE_SECURE: 'true' }),
+    ).not.toThrow();
+  });
+});
+
 describe('startupWarnings: database TLS', () => {
   const warn = (DATABASE_URL: string) => startupWarnings({ DATABASE_URL });
 

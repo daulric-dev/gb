@@ -64,62 +64,62 @@ export class MasterySchoolController {
     return id;
   }
 
-  @RequirePermission('school', 'read')
+  @RequirePermission('school', 'read', 'active')
   @Get('settings')
   async settings(@Req() req: any) {
     return this.mastery.settings(await this.school(req));
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Put('settings')
   async updateSettings(@Req() req: any, @Body() dto: MasterySettingsDto) {
     return this.mastery.updateSettings(req.user.id as string, await this.school(req), dto);
   }
 
-  @RequirePermission('school', 'read')
+  @RequirePermission('school', 'read', 'active')
   @Get('outcome-sets')
   async sets(@Req() req: any, @Query() q: OutcomeListQueryDto) {
     return this.outcomes.listSets(await this.school(req), q.includeArchived === 'true');
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('outcome-sets')
   async createSet(@Req() req: any, @Body() dto: OutcomeSetDto) {
     return this.outcomes.createSet(req.user.id as string, await this.school(req), dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('outcome-sets/import')
   async importSet(@Req() req: any, @Body() dto: ImportOutcomesDto) {
     return this.outcomes.importCsv(req.user.id as string, await this.school(req), dto);
   }
 
-  @RequirePermission('school', 'read')
+  @RequirePermission('school', 'read', 'active')
   @Get('outcome-sets/:setId')
   async set(@Req() req: any, @Param('setId', ParseUUIDPipe) setId: string) {
     return this.outcomes.getSet(await this.school(req), setId);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Patch('outcome-sets/:setId')
   async updateSet(@Req() req: any, @Param('setId', ParseUUIDPipe) setId: string, @Body() dto: UpdateOutcomeSetDto) {
     return this.outcomes.updateSet(req.user.id as string, await this.school(req), setId, dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Delete('outcome-sets/:setId')
   @HttpCode(204)
   async removeSet(@Req() req: any, @Param('setId', ParseUUIDPipe) setId: string) {
     await this.outcomes.removeSet(req.user.id as string, await this.school(req), setId);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Post('outcome-sets/:setId/outcomes')
   async createOutcome(@Req() req: any, @Param('setId', ParseUUIDPipe) setId: string, @Body() dto: OutcomeDto) {
     return this.outcomes.createSchoolOutcome(req.user.id as string, await this.school(req), setId, dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Patch('outcome-sets/:setId/outcomes/:outcomeId')
   async updateOutcome(
     @Req() req: any,
@@ -130,7 +130,7 @@ export class MasterySchoolController {
     return this.outcomes.updateSchoolOutcome(req.user.id as string, await this.school(req), setId, outcomeId, dto);
   }
 
-  @RequirePermission('school', 'update')
+  @RequirePermission('school', 'update', 'active')
   @Delete('outcome-sets/:setId/outcomes/:outcomeId')
   @HttpCode(204)
   async removeOutcome(

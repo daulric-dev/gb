@@ -12,7 +12,15 @@
  * - `SESSION_ROTATION_GRACE_SECONDS` (default 120): how long a token keeps
  *   working after the daily rotation replaced it, for requests already in
  *   flight. After that it counts as a copied token, unless the client
- *   plainly never got the new one (LOST_ROTATION_GRACE_MS in session.service).
+ *   plainly never got the new one (`SESSION_LOST_ROTATION_GRACE_MINUTES`).
+ * - `SESSION_LOST_ROTATION_GRACE_MINUTES` (default 60): how long a replaced
+ *   token can still recover its session when the rotating response was
+ *   clearly lost - the new token has never been presented, and the old one
+ *   comes back from the same user agent. Recovering this way always emails
+ *   the account, because the same conditions hold for a token copied before
+ *   the real client next called. Lower it (or set 0 to switch it off) where
+ *   clients have reliable connections; the cost is a client that misses a
+ *   rotation being signed out.
  * - `SESSION_ALERTS_ENABLED` (default true): email users about sign-ins from a
  *   new device and about sessions ended for token reuse.
  */
@@ -66,6 +74,17 @@ export function renewAfterMs(): number {
 
 export function rotationGraceMs(): number {
   return numberFrom(process.env.SESSION_ROTATION_GRACE_SECONDS, 120, 0) * 1000;
+}
+
+const MINUTE_MS = 60_000;
+
+/**
+ * How long a replaced token can still recover its session after a rotation
+ * the client never received. Was a day; an hour covers a lost response and a
+ * retry without leaving a stolen cookie usable for the rest of the day.
+ */
+export function lostRotationGraceMs(): number {
+  return numberFrom(process.env.SESSION_LOST_ROTATION_GRACE_MINUTES, 60, 0) * MINUTE_MS;
 }
 
 export function sessionAlertsEnabled(): boolean {

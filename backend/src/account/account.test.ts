@@ -248,6 +248,7 @@ function sessions() {
   const alerts = {
     newSignIn: mock(async (_s: unknown) => {}),
     tokenReuse: mock(async (_s: unknown) => {}),
+    rotationRecovered: mock(async (_s: unknown) => {}),
   };
   const service = new SessionService(prisma as any, cache as any, alerts as any);
   const rows: Row[] = [];
@@ -571,11 +572,51 @@ describe('SessionService: rotation', () => {
     test('the old token recovers the session from the same client and gets the current one again', async () => {
       const t = sessions();
       const { token, row } = await lost(t);
-      row.rotated_at = new Date(Date.now() - 2 * 60 * 60_000);
+      row.rotated_at = new Date(Date.now() - 30 * 60_000);
       expect(await t.service.resolve(app(token), t.reply())).toMatchObject({ userId: 'u1' });
       expect(t.headers['x-session-token']).toBe(rotatedToken(token));
       expect(row.revoked_at).toBeNull();
       expect(t.alerts.tokenReuse).not.toHaveBeenCalled();
+    });
+
+    test('recovering emails the account: it is indistinguishable from a copied token', async () => {
+      const t = sessions();
+      const { token, row } = await lost(t);
+      row.rotated_at = new Date(Date.now() - 30 * 60_000);
+      await t.service.resolve(app(token), t.reply());
+      expect(t.alerts.rotationRecovered).toHaveBeenCalled();
+    });
+
+    test('a request already in flight is ordinary and stays quiet', async () => {
+      const t = sessions();
+      const { token, row } = await lost(t);
+      // Inside SESSION_ROTATION_GRACE_SECONDS (120 by default).
+      row.rotated_at = new Date(Date.now() - 1000);
+      expect(await t.service.resolve(app(token), t.reply())).toMatchObject({ userId: 'u1' });
+      expect(t.alerts.rotationRecovered).not.toHaveBeenCalled();
+    });
+
+    test('is theft once the grace has passed', async () => {
+      const t = sessions();
+      const { token, row } = await lost(t);
+      row.rotated_at = new Date(Date.now() - 61 * 60_000);
+      expect(await t.service.resolve(app(token), t.reply())).toBeNull();
+      expect(row.revoked_reason).toBe('token_reuse');
+    });
+
+    test('SESSION_LOST_ROTATION_GRACE_MINUTES sets the window', async () => {
+      const saved = process.env.SESSION_LOST_ROTATION_GRACE_MINUTES;
+      process.env.SESSION_LOST_ROTATION_GRACE_MINUTES = '0';
+      try {
+        const t = sessions();
+        const { token, row } = await lost(t);
+        row.rotated_at = new Date(Date.now() - 5 * 60_000);
+        expect(await t.service.resolve(app(token), t.reply())).toBeNull();
+        expect(row.revoked_reason).toBe('token_reuse');
+      } finally {
+        if (saved === undefined) delete process.env.SESSION_LOST_ROTATION_GRACE_MINUTES;
+        else process.env.SESSION_LOST_ROTATION_GRACE_MINUTES = saved;
+      }
     });
 
     test('is still theft from another user agent', async () => {

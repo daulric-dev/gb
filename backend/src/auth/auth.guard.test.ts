@@ -4,20 +4,27 @@ import {
   UnauthorizedException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { AuthGuard } from './auth.guard';
+import { Public } from './public.decorator';
 import { expectRejection } from '@/test/mocks';
 import { createMockPrisma } from '@/test/prisma-mock';
 
 function makeContext() {
   const request: any = {};
   const reply: any = {};
+  class TestController {}
+  const handler = function route() {};
   const context = {
     switchToHttp: () => ({
       getRequest: () => request,
       getResponse: () => reply,
     }),
+    // AuthGuard reads @Public() off these (auth/public.decorator.ts).
+    getHandler: () => handler,
+    getClass: () => TestController,
   } as unknown as ExecutionContext;
-  return { context, request };
+  return { context, request, handler, controller: TestController };
 }
 
 let lastSessions: { revoke: ReturnType<typeof mock> };
@@ -46,7 +53,7 @@ function makeGuard(opts: {
     prisma.user_profile.findUnique.mockResolvedValue(opts.profile ?? null);
   }
   lastSessions = sessions;
-  return new AuthGuard(sessions as any, prisma as any);
+  return new AuthGuard(sessions as any, prisma as any, new Reflector());
 }
 
 const activeUser = { id: 'user-1', email: 'a@b.com' };
@@ -137,6 +144,33 @@ describe('AuthGuard', () => {
     const guard = makeGuard({
       getUserThrows: new UnauthorizedException('expired'),
     });
+    const { context } = makeContext();
+
+    expect(await expectRejection(guard.canActivate(context))).toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  // The guard is global (APP_GUARD), so these two decide what the public
+  // surface is. route-coverage.test.ts holds the list of routes that use it.
+  test('lets a @Public() handler through with no session at all', async () => {
+    const guard = makeGuard({ user: null });
+    const { context, handler } = makeContext();
+    Public()(handler);
+
+    expect(await guard.canActivate(context)).toBe(true);
+  });
+
+  test('lets a @Public() controller through with no session at all', async () => {
+    const guard = makeGuard({ user: null });
+    const { context, controller } = makeContext();
+    Public()(controller);
+
+    expect(await guard.canActivate(context)).toBe(true);
+  });
+
+  test('an unmarked route still needs a session', async () => {
+    const guard = makeGuard({ user: null });
     const { context } = makeContext();
 
     expect(await expectRejection(guard.canActivate(context))).toBeInstanceOf(

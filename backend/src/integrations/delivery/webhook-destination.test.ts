@@ -20,15 +20,19 @@ describe('resolveWebhookDestination', () => {
       for (const address of [
         '10.0.0.1',
         '127.0.0.1',
-        '169.254.169.254',
         '192.168.1.1',
         '::1',
-        'fe80::1',
         'fc00::1',
         '::ffff:127.0.0.1',
       ]) {
         await expect(resolveWebhookDestination(address)).rejects.toThrow(
           'private or reserved',
+        );
+      }
+      // Link-local has its own refusal; it is never allowed (see below).
+      for (const address of ['169.254.169.254', 'fe80::1']) {
+        await expect(resolveWebhookDestination(address)).rejects.toThrow(
+          'link-local or metadata',
         );
       }
     } finally {
@@ -140,5 +144,84 @@ describe('resolveWebhookDestinations', () => {
         { allowPrivate: false },
       ),
     ).rejects.toThrow('private or reserved');
+  });
+});
+
+describe('link-local and cloud metadata are never allowed', () => {
+  // WEBHOOK_ALLOW_PRIVATE (and a per-request allowPrivate) exist so an
+  // organisation can reach a service on its own network. Instance metadata
+  // hands out credentials to anything that can make a request from the
+  // machine, so it stays out of reach either way.
+  const METADATA = [
+    '169.254.169.254', // AWS, GCP, Azure
+    '169.254.170.2', // ECS task metadata
+    'fd00:ec2::254', // AWS IPv6
+    'fe80::1', // link-local generally
+  ];
+
+  test('refused with allowPrivate passed explicitly', async () => {
+    for (const address of METADATA) {
+      await expect(
+        resolveWebhookDestination(address, undefined, { allowPrivate: true }),
+      ).rejects.toThrow('link-local or metadata');
+    }
+  });
+
+  test('refused with WEBHOOK_ALLOW_PRIVATE=true', async () => {
+    const previous = process.env.WEBHOOK_ALLOW_PRIVATE;
+    process.env.WEBHOOK_ALLOW_PRIVATE = 'true';
+    try {
+      for (const address of METADATA) {
+        await expect(resolveWebhookDestination(address)).rejects.toThrow(
+          'link-local or metadata',
+        );
+      }
+    } finally {
+      if (previous === undefined) delete process.env.WEBHOOK_ALLOW_PRIVATE;
+      else process.env.WEBHOOK_ALLOW_PRIVATE = previous;
+    }
+  });
+
+  test('refused when a hostname resolves to one', async () => {
+    const resolver = async () => [
+      { address: '203.0.113.5', family: 4 },
+      { address: '169.254.169.254', family: 4 },
+    ];
+    await expect(
+      resolveWebhookDestination('metadata.example.com', resolver, {
+        allowPrivate: true,
+      }),
+    ).rejects.toThrow('link-local or metadata');
+  });
+
+  test('an IPv4 metadata address written as IPv6 is refused too', async () => {
+    // A dual-stack socket connects every one of these to 169.254.169.254.
+    // `new URL('http://[::ffff:169.254.169.254]/').hostname` canonicalises to
+    // `[::ffff:a9fe:a9fe]`, so the check cannot be on the text.
+    for (const address of [
+      '::ffff:169.254.169.254',
+      '::ffff:a9fe:a9fe',
+      '0:0:0:0:0:ffff:169.254.169.254',
+      '::169.254.169.254',
+      '::ffff:169.254.170.2',
+    ]) {
+      await expect(
+        resolveWebhookDestination(address, undefined, { allowPrivate: true }),
+      ).rejects.toThrow('link-local or metadata');
+    }
+  });
+
+  test('an ordinary address written as IPv4-mapped IPv6 is unaffected', async () => {
+    const resolved = await resolveWebhookDestination('::ffff:10.0.0.4', undefined, {
+      allowPrivate: true,
+    });
+    expect(resolved.address).toBe('::ffff:10.0.0.4');
+  });
+
+  test('an ordinary private address is still reachable with allowPrivate', async () => {
+    const resolved = await resolveWebhookDestination('10.0.0.4', undefined, {
+      allowPrivate: true,
+    });
+    expect(resolved.address).toBe('10.0.0.4');
   });
 });

@@ -51,6 +51,8 @@ export interface PurgeReport {
   discussionRepliesScrubbed: number;
   sessions: number;
   emailCodes: number;
+  /** Spent report links (report-card/report-link.ts) past their expiry. */
+  reportLinkUses: number;
   /** Remembered devices (new sign-in alerts) unused for 90 days. */
   knownDevices: number;
   erasureLogRows: number;
@@ -137,6 +139,7 @@ export class RetentionService {
       discussionRepliesScrubbed: 0,
       sessions: 0,
       emailCodes: 0,
+      reportLinkUses: 0,
       knownDevices: 0,
       erasureLogRows: 0,
       erasureLogObjects: 0,
@@ -872,7 +875,8 @@ export class RetentionService {
 
   /**
    * Sessions that expired (sliding or absolute) or were revoked, and sign-in
-   * codes, more than a day ago; remembered devices unused for 90 days. Not written to the erasure log: they are not something a person
+   * codes, more than a day ago; spent report links past their expiry;
+   * remembered devices unused for 90 days. Not written to the erasure log: they are not something a person
    * asked to erase, and a restore signs everyone out anyway (BACKUPS.md).
    * SSO state and handoff codes live in the cache with a TTL.
    */
@@ -887,9 +891,13 @@ export class RetentionService {
     };
     const codeWhere = { created_at: { lt: before } };
     const deviceWhere = { last_seen_at: { lt: new Date(now.getTime() - KNOWN_DEVICE_WINDOW_MS) } };
+    // A spent report link only has to be remembered until the token it names
+    // would have expired on its own.
+    const linkWhere = { expires_at: { lt: now } };
     if (opts.dryRun) {
       report.sessions = await this.prisma.session.count({ where: sessionWhere });
       report.emailCodes = await this.prisma.email_code.count({ where: codeWhere });
+      report.reportLinkUses = await this.prisma.report_link_use.count({ where: linkWhere });
       report.knownDevices = await this.prisma.known_device.count({ where: deviceWhere });
       return;
     }
@@ -909,6 +917,14 @@ export class RetentionService {
       if (ids.length === 0) break;
       const { count } = await this.prisma.email_code.deleteMany({ where: { id: { in: ids } } });
       report.emailCodes += count;
+      if (count === 0) break;
+    }
+    for (;;) {
+      this.checkTime(deadline);
+      const ids = (await this.prisma.report_link_use.findMany({ where: linkWhere, select: { jti: true }, take: batchSize() })).map((r) => r.jti);
+      if (ids.length === 0) break;
+      const { count } = await this.prisma.report_link_use.deleteMany({ where: { jti: { in: ids } } });
+      report.reportLinkUses += count;
       if (count === 0) break;
     }
   }

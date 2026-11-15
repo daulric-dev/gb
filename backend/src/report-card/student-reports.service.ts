@@ -8,6 +8,7 @@ import { renderTranscript } from './report-pdf';
 import { assertKeyInSchool } from './report-keys';
 import { reportFileName } from './report-card.calc';
 import { signReportLink, verifyReportLink } from './report-link';
+import { isUniqueViolation } from '@/common/db-values';
 
 export interface PublishedReport {
   /** The report_document id: what download and link routes take. */
@@ -162,10 +163,26 @@ export class StudentReportsService {
     return { url: `/api/report-cards/files/${token}`, expiresAt: expiresAt.toISOString() };
   }
 
-  /** The PDF behind a signed link; 404 for an invalid or expired one. */
+  /**
+   * The PDF behind a signed link; 404 for an invalid, expired or already-used
+   * one. The link is spent before the file is read: the insert is the claim,
+   * so two requests racing with the same token cannot both get through, and a
+   * token copied out of an access log is worthless.
+   */
   async openSignedLink(token: string): Promise<ReportFile> {
+    const gone = new NotFoundException('This link has expired. Open the report again.');
     const claims = verifyReportLink(token);
-    if (!claims) throw new NotFoundException('This link has expired. Open the report again.');
+    if (!claims) throw gone;
+    try {
+      await this.prisma.report_link_use.create({
+        data: { jti: claims.j, expires_at: new Date(claims.e * 1000) },
+      });
+    } catch (err) {
+      // Already used. Anything else is a real failure and must not look like
+      // a spent link, or an outage would read as "your link expired".
+      if (isUniqueViolation(err)) throw gone;
+      throw err;
+    }
     await this.features.assertEnabled(claims.s, 'report_cards');
     return this.read(await this.downloadable(null, claims.d, claims.s));
   }

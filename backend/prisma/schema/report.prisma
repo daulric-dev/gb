@@ -88,6 +88,19 @@ model report_document {
   @@schema("grading")
 }
 
+/// A signed report link that has been used. The link's token carries a random
+/// `jti`; opening it inserts that id here, so a second use finds the row and
+/// is refused. Rows are purged once they are past `expires_at` (the retention
+/// sweep); the link's own five-minute lifetime is the second bound.
+model report_link_use {
+  jti        String   @id
+  used_at    DateTime @default(now()) @db.Timestamptz(6)
+  expires_at DateTime @db.Timestamptz(6)
+
+  @@index([expires_at], map: "idx_report_link_use_expires")
+  @@schema("grading")
+}
+
 enum report_comment_status {
   draft
   ready

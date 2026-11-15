@@ -28,7 +28,7 @@ export class StudentController {
   ) {}
 
   /** QUERY /students: search and paging in the JSON body. */
-  @RequirePermission('student', 'read')
+  @RequirePermission('student', 'read', 'active')
   @QueryMethod()
   async findAll(
     @Req() req: any,
@@ -53,7 +53,7 @@ export class StudentController {
     return this.versioning.resolve(req, 'student.paginated')(raw);
   }
 
-  @RequirePermission('student', 'read')
+  @RequirePermission('student', 'read', 'active')
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
@@ -62,14 +62,14 @@ export class StudentController {
   }
 
   /** The student's own page: courses, account and guardians. */
-  @RequirePermission('student', 'read')
+  @RequirePermission('student', 'read', 'active')
   @Get(':id/profile')
   async profile(@Req() req: any, @Param('id') id: string) {
     const userId: string = req.user.id;
     return this.studentService.profile(userId, id);
   }
 
-  @RequirePermission('student', 'update')
+  @RequirePermission('student', 'update', 'active')
   @Patch(':id')
   async update(
     @Req() req: any,

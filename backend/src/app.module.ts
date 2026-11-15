@@ -8,6 +8,7 @@ import { THROTTLER_SHARED_STORAGE, ThrottleStorageModule } from '@/throttle/thro
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { VersioningGuard } from '@/versioning/versioning.guard';
+import { AuthGuard } from '@/auth/auth.guard';
 import { PrismaModule } from '@/prisma/prisma.module';
 import { StorageModule } from '@/storage/storage.module';
 import { MailModule } from '@/mail/mail.module';
@@ -214,6 +215,15 @@ import { HealthService } from '@/health/health.service';
     {
       provide: APP_GUARD,
       useClass: VersioningGuard,
+    },
+    {
+      // Authentication is on by default: every route needs a session unless
+      // it is marked @Public() (auth/public.decorator.ts). Registered after
+      // ThrottlerGuard so rate limiting still runs ahead of the session
+      // lookup, and before any controller or route guard, so PermissionGuard,
+      // AdminGuard, StudentGuard and the rest still see request.user.
+      provide: APP_GUARD,
+      useClass: AuthGuard,
     },
   ],
 })

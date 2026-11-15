@@ -1,9 +1,10 @@
 name: Release
 
-# Packages the frontend, backend and docs sources (plus the root workspace
-# files needed to install them with Bun) into one zip for self-hosting schools.
-# A version tag publishes a GitHub Release; a manual run is a dry run that only
-# uploads the zip as a workflow artifact.
+# Packages the frontend, backend and docs sources, the self-hosting files in
+# infrastructure/ (plus the root workspace files needed to install them with
+# Bun) into one zip for self-hosting schools. The mobile app is not shipped;
+# it is built from the repository. A version tag publishes a GitHub Release;
+# a manual run is a dry run that only uploads the zip as a workflow artifact.
 
 on:
   push:

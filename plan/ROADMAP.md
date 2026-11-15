@@ -2,7 +2,7 @@
 
 Features planned for implementation, grouped by priority. Each entry says why it matters, what it covers, and what it touches. Tick the box when it ships and link the pull request.
 
-New features that a school might not want go behind a **feature flag** in the catalog (`backend/src/features/feature.catalog.ts`). The organisation makes a feature available, and each school's admin can switch it off. Routes are guarded with `@RequireFeature(...)`, and the web and mobile apps hide what is off. See [backend/src/features/README.md](backend/src/features/README.md).
+New features that a school might not want go behind a **feature flag** in the catalog (`backend/src/features/feature.catalog.ts`). The organisation makes a feature available, and each school's admin can switch it off. Routes are guarded with `@RequireFeature(...)`, and the web and mobile apps hide what is off. See [backend/src/features/README.md](../backend/src/features/README.md).
 
 **Priority:** P1 = next up; P2 = after P1; P3 = later or needs a decision first.
 
@@ -123,7 +123,7 @@ New features that a school might not want go behind a **feature flag** in the ca
 
 ### 10. Mastery / standards-based grading — [x] (PR #TBD)
 
-Link assignments and rubric rows to learning outcomes; track each student's mastery per outcome over time; an optional outcome-based report card view. **Decided:** alongside the points gradebook (nothing existing changes). Feature flag `mastery` (default off); see [backend/src/mastery/README.md](backend/src/mastery/README.md).
+Link assignments and rubric rows to learning outcomes; track each student's mastery per outcome over time; an optional outcome-based report card view. **Decided:** alongside the points gradebook (nothing existing changes). Feature flag `mastery` (default off); see [backend/src/mastery/README.md](../backend/src/mastery/README.md).
 
 ### 11. Peer review — [x] (PR #TBD)
 
@@ -161,7 +161,7 @@ Submission rates, grade distributions and at-risk students per course and school
 
 ## How to work on an item
 
-1. Open a branch off `staging` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+1. Open a branch off `staging` (see [CONTRIBUTING.md](../CONTRIBUTING.md)).
 2. Start with the schema and a migration, then the backend (with tests for every refusal path), then web and mobile.
 3. Add the feature flag to the catalog if the entry names one, guard every route with `@RequireFeature`, and hide the UI when it is off.
 4. Update the module `README.md`, the user guide in `docs/content/guide/`, and [ACCESSIBILITY.md](ACCESSIBILITY.md) if the feature affects it.
