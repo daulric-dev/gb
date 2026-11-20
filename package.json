@@ -48,6 +48,7 @@
         "zod": "^4.6.7",
         "deepmerge": "4.1.2",
         "glob": "^14.0.3",
-        "minimatch": "^11.0.3"
+        "minimatch": "^11.0.3",
+        "effect": "3.22.1"
     }
 }
