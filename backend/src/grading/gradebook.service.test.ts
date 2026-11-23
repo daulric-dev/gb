@@ -35,6 +35,7 @@ function activity(id: string, over: Record<string, any> = {}) {
     due_at: null,
     status: 'published',
     published_at: new Date('2026-09-01T00:00:00Z'),
+    grades_published_at: new Date('2026-09-01T00:00:00Z'),
     allow_file: true,
     allow_text: false,
     max_attempts: 1,
@@ -280,6 +281,36 @@ describe('GradebookService.studentGrades', () => {
     expect(page.activities[1].groupName).toBeNull();
     expect(page.activities[1].submission!.feedback).toBeNull();
     expect(page.activities[0]).not.toHaveProperty('omitFromFinalGrade');
+  });
+
+  test('hides unpublished marks and leaves them out of the student total', async () => {
+    const { service } = build(
+      TABLES({
+        activities: [
+          activity('a1', { grades_published_at: null }),
+        ],
+        submissions: [
+          {
+            activity_id: 'a1',
+            student_id: 'stu-1',
+            status: 'graded',
+            score: dec(9),
+            excused: false,
+            feedback: 'Secret until released',
+            attempt_count: 0,
+          },
+        ],
+      }),
+    );
+
+    const page = await service.studentGrades('stu-1', 'course-1');
+    expect(page.grade.percent).toBeNull();
+    expect(page.activities[0].submission!.score).toBeNull();
+    expect(page.activities[0].submission!.feedback).toBeNull();
+    expect(page.activities[0].submission!.status).toBe('submitted');
+
+    const summary = await service.studentSummary('course-1', 'stu-1');
+    expect(summary.percent).toBeNull();
   });
 });
 

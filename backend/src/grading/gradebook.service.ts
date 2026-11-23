@@ -374,15 +374,31 @@ export class GradebookService {
       this.loadBands(course),
     ]);
 
+    const publishedIds = new Set(
+      activities
+        .filter((a) => a.grades_published_at)
+        .map((a) => a.id as string),
+    );
+
     const submissions = await this.loadSubmissions(
       activities.map((a) => a.id as string),
       [studentId],
     );
     const calc = new Map<string, CalcSubmission>(
-      submissions.map((s) => [
-        s.activity_id as string,
-        this.toCalcSubmission(s),
-      ]),
+      submissions.map((s) => {
+        const isPublished = publishedIds.has(s.activity_id as string);
+        const effective = isPublished
+          ? s
+          : {
+              ...s,
+              status: s.status === 'graded' ? 'submitted' : s.status,
+              score: null,
+            };
+        return [
+          s.activity_id as string,
+          this.toCalcSubmission(effective),
+        ];
+      }),
     );
 
     return this.gradeFor(groups as Array<{ id: string | null; name: string }>, activities, calc, bands);
@@ -412,6 +428,12 @@ export class GradebookService {
       this.loadBands(course),
     ]);
 
+    const publishedIds = new Set(
+      activities
+        .filter((a) => a.grades_published_at)
+        .map((a) => a.id as string),
+    );
+
     const submissions = await this.loadSubmissions(
       activities.map((a) => a.id as string),
       [studentId],
@@ -420,10 +442,20 @@ export class GradebookService {
       submissions.map((s) => [s.activity_id as string, s]),
     );
     const calc = new Map<string, CalcSubmission>(
-      submissions.map((s) => [
-        s.activity_id as string,
-        this.toCalcSubmission(s),
-      ]),
+      submissions.map((s) => {
+        const isPublished = publishedIds.has(s.activity_id as string);
+        const effective = isPublished
+          ? s
+          : {
+              ...s,
+              status: s.status === 'graded' ? 'submitted' : s.status,
+              score: null,
+            };
+        return [
+          s.activity_id as string,
+          this.toCalcSubmission(effective),
+        ];
+      }),
     );
 
     const groupName = new Map(groups.map((g) => [g.id, g.name]) as Array<[string, string]>);

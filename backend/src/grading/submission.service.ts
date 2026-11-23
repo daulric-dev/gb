@@ -29,6 +29,7 @@ import {
   ts,
 } from './activity.mapper';
 import { loadAssessments, loadRubric } from './rubric.service';
+import { CourseNotificationService } from '@/course-notification/course-notification.service';
 import { SubmissionEvents } from './submission-events';
 import {
   assertNotClosed,
@@ -82,6 +83,7 @@ const STUDENT_ACTIVITY_SELECT = {
   points: true,
   due_at: true,
   status: true,
+  grades_published_at: true,
   allow_file: true,
   allow_multiple_files: true,
   allow_text: true,
@@ -188,6 +190,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly auditLog?: AuditLogService,
     @Optional() private readonly cache?: CacheService,
     @Optional() private readonly events?: SubmissionEvents,
+    @Optional() private readonly notices?: CourseNotificationService,
   ) {}
 
   onModuleInit() {
@@ -375,7 +378,8 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
 
     const items = rows.map((a) => {
       const submission = byActivity.get(a.id);
-      const graded = submission?.status === 'graded';
+      const gradesPublished = !!a.grades_published_at;
+      const graded = gradesPublished && submission?.status === 'graded';
 
       return {
         id: a.id,
@@ -392,17 +396,22 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         allowFile: a.allow_file,
         allowMultipleFiles: a.allow_multiple_files,
         allowText: a.allow_text,
+        gradesPublished,
+        gradesPublishedAt: ts(a.grades_published_at),
         submission: submission
           ? {
               id: submission.id,
-              status: submission.status,
+              status:
+                submission.status === 'graded' && !gradesPublished
+                  ? 'submitted'
+                  : submission.status,
               score:
                 graded && submission.score !== null
                   ? roundScore(Number(submission.score))
                   : null,
-              excused: !!submission.excused,
+              excused: graded ? !!submission.excused : false,
               submittedAt: ts(submission.submitted_at),
-              gradedAt: ts(submission.graded_at),
+              gradedAt: graded ? ts(submission.graded_at) : null,
               lateSeconds: submission.late_seconds ?? 0,
               latePenaltyPercent: submission.late_penalty_waived
                 ? 0
@@ -561,10 +570,13 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         ? await this.questionCount(activityId, questions.length, submission?.id ?? null)
         : 0;
 
-    // Once marked, the teacher's points and comments on essay and file
+    const gradesPublished = !!activity.grades_published_at;
+    const graded = gradesPublished && submission?.status === 'graded';
+
+    // Once marked and published, the teacher's points and comments on essay and file
     // questions (their marks, not an answer key).
     const markedQuestions =
-      activity.kind === 'quiz' && submission?.status === 'graded'
+      activity.kind === 'quiz' && graded
         ? (
             await this.prisma.quiz_answer.findMany({
               where: { submission_id: submission.id, manual_points: { not: null } },
@@ -580,11 +592,10 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     const files = submission
       ? await this.submissionFiles(submission.id, submission.file_id)
       : [];
-    const graded = submission?.status === 'graded';
 
     // The rubric is shown up front so the student knows how the work will be
-    // marked; the levels they were given only once the mark is final (and
-    // only if it was marked with the rubric rather than a bare score).
+    // marked; the levels they were given only once the mark is final and published
+    // (and only if it was marked with the rubric rather than a bare score).
     const rubric = await loadRubric(this.prisma, activity.rubric_id);
     const rubricAssessment =
       rubric && graded && submission
@@ -633,24 +644,29 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
           : null,
       rubric,
       rubricAssessment,
+      gradesPublished,
+      gradesPublishedAt: ts(activity.grades_published_at),
       submission: submission
         ? {
             id: submission.id,
-            status: submission.status,
+            status:
+              submission.status === 'graded' && !gradesPublished
+                ? 'submitted'
+                : submission.status,
             textBody: submission.text_body,
             fileId: files[0]?.id ?? null,
             fileName: files[0]?.name ?? null,
             files,
             // A teacher may be partway through marking; show the mark once
-            // it is final.
+            // it is final and published.
             score:
               graded && submission.score !== null
                 ? roundScore(Number(submission.score))
                 : null,
             feedback: graded ? submission.feedback : null,
-            excused: !!submission.excused,
+            excused: graded ? !!submission.excused : false,
             submittedAt: ts(submission.submitted_at),
-            gradedAt: ts(submission.graded_at),
+            gradedAt: graded ? ts(submission.graded_at) : null,
             attemptCount: submission.attempt_count ?? 0,
             // A quiz with essay or file questions waits for the teacher.
             needsMarking:
@@ -2267,12 +2283,14 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       select: {
         id: true,
         course_id: true,
+        title: true,
         points: true,
         status: true,
         kind: true,
         lockdown_browser: true,
         due_at: true,
         late_until: true,
+        grades_published_at: true,
       },
     });
 
@@ -2729,6 +2747,13 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Failed to save the mark');
     }
     this.emitGrade(activityId, marked, userId, 'teacher');
+    if (activity.grades_published_at && this.notices) {
+      void this.notices.gradesPublished(
+        activity.course_id,
+        { id: activity.id, title: activity.title },
+        [studentId],
+      );
+    }
     return marked;
   }
 
@@ -3163,7 +3188,106 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     });
     if (marked.status === 'graded') {
       this.emitGrade(activityId, marked, userId, 'teacher');
+      if (activity.grades_published_at && this.notices) {
+        void this.notices.gradesPublished(
+          activity.course_id,
+          { id: activity.id, title: activity.title },
+          [studentId],
+        );
+      }
     }
     return marked;
+  }
+
+  /**
+   * Publish grades for an activity so enrolled students can see their marks
+   * and feedback. Tells every student with a graded submission that their
+   * assignment was graded. Audited.
+   */
+  async publishGrades(userId: string, activityId: string) {
+    const activity = await this.requireMarkable(userId, activityId);
+
+    if (activity.status === 'draft') {
+      throw new ConflictException('Publish this activity before publishing grades');
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.activity.update({
+      where: { id: activityId },
+      data: { grades_published_at: now },
+      select: {
+        id: true,
+        course_id: true,
+        title: true,
+        grades_published_at: true,
+      },
+    });
+
+    // Notify all students whose work is graded.
+    const graded = await this.prisma.submission.findMany({
+      where: { activity_id: activityId, status: 'graded' },
+      select: { student_id: true },
+    });
+
+    if (graded.length > 0 && this.notices) {
+      const studentIds = graded.map((s) => s.student_id);
+      void this.notices.gradesPublished(
+        activity.course_id,
+        { id: activity.id, title: activity.title },
+        studentIds,
+      );
+    }
+
+    await this.auditLog?.record(
+      this.prisma,
+      activity.school_id,
+      { id: userId },
+      {
+        entity: 'activity',
+        entityId: activity.id,
+        action: 'update',
+        changes: { gradesPublishedAt: now.toISOString() },
+      },
+    );
+
+    return {
+      activityId: updated.id,
+      gradesPublishedAt: updated.grades_published_at
+        ? updated.grades_published_at.toISOString()
+        : null,
+    };
+  }
+
+  /**
+   * Hide marks and feedback for an activity from students again. Audited.
+   */
+  async unpublishGrades(userId: string, activityId: string) {
+    const activity = await this.requireMarkable(userId, activityId);
+
+    const updated = await this.prisma.activity.update({
+      where: { id: activityId },
+      data: { grades_published_at: null },
+      select: {
+        id: true,
+        grades_published_at: true,
+      },
+    });
+
+    await this.auditLog?.record(
+      this.prisma,
+      activity.school_id,
+      { id: userId },
+      {
+        entity: 'activity',
+        entityId: activity.id,
+        action: 'update',
+        changes: { gradesPublishedAt: null },
+      },
+    );
+
+    return {
+      activityId: updated.id,
+      gradesPublishedAt: null,
+    };
   }
 }

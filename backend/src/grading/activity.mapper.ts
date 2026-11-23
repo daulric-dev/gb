@@ -23,6 +23,7 @@ export const ACTIVITY_SELECT = {
   due_at: true,
   status: true,
   published_at: true,
+  grades_published_at: true,
   allow_file: true,
   allow_multiple_files: true,
   allow_text: true,
@@ -78,6 +79,7 @@ export function toActivity(a: any) {
     dueAt: ts(a.due_at),
     status: a.status as ActivityStatus,
     publishedAt: ts(a.published_at),
+    gradesPublishedAt: ts(a.grades_published_at),
     allowFile: !!a.allow_file,
     allowMultipleFiles: !!a.allow_multiple_files,
     allowText: !!a.allow_text,
@@ -102,21 +104,24 @@ export type ActivityDto = ReturnType<typeof toActivity>;
 /**
  * The `PortalSubmissionState` contract.
  *
- * A score and feedback only reach the student once the work is graded: until
- * then a teacher may be halfway through marking, and a number that changes
- * under the student is worse than none.
+ * A score and feedback only reach the student once the work is graded AND the
+ * teacher has published the grades for the assignment: until then a teacher
+ * may still be marking the class, and a number that changes under the
+ * student or is visible before the teacher is ready is hidden.
  */
-export function toPortalSubmission(s: any) {
+export function toPortalSubmission(s: any, gradesPublished = true) {
   if (!s) return null;
-  const graded = s.status === 'graded';
+  const graded = gradesPublished && s.status === 'graded';
   const late = toLateness(s as Lateness);
   return {
-    status: s.status as SubmissionStatus,
+    status: (s.status === 'graded' && !gradesPublished)
+      ? ('submitted' as SubmissionStatus)
+      : (s.status as SubmissionStatus),
     score:
       graded && s.score !== null && s.score !== undefined
         ? roundScore(Number(s.score))
         : null,
-    excused: !!s.excused,
+    excused: graded ? !!s.excused : false,
     attemptCount: (s.attempt_count as number | null) ?? 0,
     submittedAt: ts(s.submitted_at),
     feedback: graded ? ((s.feedback as string | null) ?? null) : null,
@@ -134,11 +139,14 @@ export function toPortalSubmission(s: any) {
  * submission state.
  */
 export function toPortalActivity(a: any, submission: any) {
+  const gradesPublished = !!a.grades_published_at;
   const full: Partial<ActivityDto> = toActivity(a);
   delete full.omitFromFinalGrade;
   delete full.createdAt;
   return {
     ...(full as Omit<ActivityDto, 'omitFromFinalGrade' | 'createdAt'>),
-    submission: toPortalSubmission(submission),
+    gradesPublished,
+    gradesPublishedAt: ts(a.grades_published_at),
+    submission: toPortalSubmission(submission, gradesPublished),
   };
 }

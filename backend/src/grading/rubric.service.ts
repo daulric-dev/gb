@@ -19,6 +19,7 @@ import {
 } from '@/course/access/course-access.service';
 import { roundScore, scoreOrNull } from './round';
 import { ts } from './activity.mapper';
+import { CourseNotificationService } from '@/course-notification/course-notification.service';
 
 /** What callers may hand in for a rubric's structure. */
 export interface RubricInput {
@@ -172,6 +173,7 @@ export class RubricService {
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
     @Optional() private readonly auditLog?: AuditLogService,
+    @Optional() private readonly notices?: CourseNotificationService,
   ) {}
 
   /** Rubric ids in `ids` that have marked someone. */
@@ -454,9 +456,11 @@ export class RubricService {
         id: true,
         course_id: true,
         kind: true,
+        title: true,
         points: true,
         status: true,
         rubric_id: true,
+        grades_published_at: true,
       },
     });
     if (!activity) throw new NotFoundException('Activity not found');
@@ -751,6 +755,14 @@ export class RubricService {
         `Failed to save rubric marks: ${(error as Error).message}`,
       );
       throw new BadRequestException('Failed to save the mark');
+    }
+
+    if (activity.grades_published_at && this.notices) {
+      void this.notices.gradesPublished(
+        activity.course_id,
+        { id: activity.id, title: activity.title },
+        [studentId],
+      );
     }
 
     return {

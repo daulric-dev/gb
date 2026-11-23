@@ -9,6 +9,7 @@ model activity {
   due_at                DateTime?         @db.Timestamptz(6)
   status                activity_status   @default(draft)
   published_at          DateTime?         @db.Timestamptz(6)
+  grades_published_at   DateTime?         @db.Timestamptz(6)
   allow_file            Boolean           @default(false)
   allow_multiple_files  Boolean           @default(false)
   allow_text            Boolean           @default(false)
