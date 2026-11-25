@@ -200,6 +200,7 @@ export interface Activity {
   dueAt: string | null;
   status: ActivityStatus;
   publishedAt: string | null;
+  gradesPublishedAt?: string | null;
   allowFile: boolean;
   allowMultipleFiles: boolean;
   allowText: boolean;
@@ -310,6 +311,9 @@ export interface PortalCourseActivity
   hasExtension?: boolean;
   /** Past the student's due date and not inside a running quiz attempt. */
   isClosed?: boolean;
+  /** Whether the teacher has published grades to students. */
+  gradesPublished?: boolean;
+  gradesPublishedAt?: string | null;
 }
 
 export interface PortalCourseGrades {
@@ -540,7 +544,8 @@ export type CourseNotificationKind =
   | "discussion_topic"
   | "discussion_reply"
   | "peer_review_assigned"
-  | "peer_review_ready";
+  | "peer_review_ready"
+  | "grades_published";
 
 /** A notice in the portal bell (`QUERY /portal/me/notifications`). */
 export interface CourseNotification {

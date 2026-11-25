@@ -77,9 +77,9 @@ describe('legacy bridge (database built by the old SQL migrations)', () => {
 
   test('the shipped bridge files: the 26 unreleased migrations, with the two broken ones fixed', () => {
     const files = loadBridgeMigrations();
-    expect(files).toHaveLength(26);
+    expect(files).toHaveLength(27);
     expect(files[0].name).toBe('20261205100000_data_export');
-    expect(files.at(-1)!.name).toBe('20261207100000_portable_database_functions');
+    expect(files.at(-1)!.name).toBe('20261207110000_grades_published');
     expect(files.every((f) => f.name > LAST_RELEASED_MIGRATION)).toBe(true);
     for (const f of files) {
       const statements = bridgeStatements(f.sql);

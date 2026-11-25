@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSignal } from "@preact/signals-react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { Bell, FileText, Megaphone } from "lucide-react";
+import { Bell, FileText, GraduationCap, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -142,7 +142,12 @@ export function NotificationBell() {
             </p>
           ) : (
             items.value.map((n) => {
-              const Icon = n.kind === "announcement" ? Megaphone : FileText;
+              const Icon =
+                n.kind === "announcement"
+                  ? Megaphone
+                  : n.kind === "grades_published"
+                    ? GraduationCap
+                    : FileText;
               return (
                 <button
                   key={n.id}
