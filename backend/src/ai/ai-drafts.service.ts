@@ -228,9 +228,10 @@ export class AiDraftsService {
 
     let job = this.questionJobs.get(activityId);
     if (!job && this.cache) {
-      job = (await this.cache.get(`ai:quiz-questions:${activityId}`)) as QuestionDraftJob | null;
-      if (job) {
-        this.questionJobs.set(activityId, job);
+      const cached = (await this.cache.get(`ai:quiz-questions:${activityId}`)) as QuestionDraftJob | null;
+      if (cached) {
+        job = cached;
+        this.questionJobs.set(activityId, cached);
       }
     }
     if (!job) {

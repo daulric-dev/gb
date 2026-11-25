@@ -576,7 +576,7 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
     // Once marked and published, the teacher's points and comments on essay and file
     // questions (their marks, not an answer key).
     const markedQuestions =
-      activity.kind === 'quiz' && graded
+      activity.kind === 'quiz' && graded && submission
         ? (
             await this.prisma.quiz_answer.findMany({
               where: { submission_id: submission.id, manual_points: { not: null } },
@@ -3246,7 +3246,12 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         entity: 'activity',
         entityId: activity.id,
         action: 'update',
-        changes: { gradesPublishedAt: now.toISOString() },
+        changes: {
+          gradesPublishedAt: {
+            before: activity.grades_published_at?.toISOString() ?? null,
+            after: now.toISOString(),
+          },
+        },
       },
     );
 
@@ -3281,7 +3286,12 @@ export class SubmissionService implements OnModuleInit, OnModuleDestroy {
         entity: 'activity',
         entityId: activity.id,
         action: 'update',
-        changes: { gradesPublishedAt: null },
+        changes: {
+          gradesPublishedAt: {
+            before: activity.grades_published_at?.toISOString() ?? null,
+            after: null,
+          },
+        },
       },
     );
 
