@@ -114,7 +114,7 @@ export function AiQuestionDrafts({
       active = false;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [activityId]);
+  }, [activityId, drafts, working, rejected]);
 
   useEffect(() => {
     if (!open.value || pages.value) return;
