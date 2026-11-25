@@ -107,8 +107,13 @@ export function AiQuestionDrafts({
 
   async function generate(e: React.FormEvent) {
     e.preventDefault();
-    if (!ready) return;
+    if (!ready || working.value) return;
     working.value = true;
+    // Dismiss the dialog to the background so the user can continue editing their quiz.
+    const timer = setTimeout(() => {
+      open.value = false;
+    }, 500);
+
     try {
       const out = await aiDraftApi.quizQuestions(courseId, {
         ...(source.value === "page" ? { pageId: pageId.value } : { text: text.value }),
@@ -130,6 +135,7 @@ export function AiQuestionDrafts({
     } catch (err) {
       toast.error(aiErrorMessage(err));
     } finally {
+      clearTimeout(timer);
       working.value = false;
     }
   }
@@ -152,10 +158,38 @@ export function AiQuestionDrafts({
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => (open.value = true)}>
-        <Sparkles className="mr-1.5 size-4" aria-hidden />
-        Draft questions with AI
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => (open.value = true)}
+        disabled={working.value}
+      >
+        {working.value ? (
+          <>
+            <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+            Generating questions…
+          </>
+        ) : (
+          <>
+            <Sparkles className="mr-1.5 size-4" aria-hidden />
+            Draft questions with AI
+          </>
+        )}
       </Button>
+
+      {working.value && (
+        <Card className="border-primary/30 bg-primary/5 animate-fade-in">
+          <CardContent className="flex items-center gap-3 py-3 text-sm">
+            <Loader2 className="size-4 animate-spin text-primary shrink-0" />
+            <div>
+              <p className="font-medium text-foreground">Generating questions…</p>
+              <p className="text-xs text-muted-foreground">
+                The AI is drafting questions in the background. You can continue editing your quiz.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {drafts.value.length > 0 && (
         <Card>
@@ -299,12 +333,12 @@ export function AiQuestionDrafts({
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => (open.value = false)} disabled={working.value}>
-                Cancel
+              <Button type="button" variant="outline" onClick={() => (open.value = false)}>
+                {working.value ? "Run in background" : "Cancel"}
               </Button>
               <Button type="submit" disabled={!ready || working.value}>
                 {working.value && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
-                {working.value ? "Drafting…" : "Draft questions"}
+                {working.value ? "Generating questions…" : "Draft questions"}
               </Button>
             </DialogFooter>
           </form>
