@@ -1,0 +1,113 @@
+name: Gradebook Manager - Build & Release
+
+on:
+  push:
+    tags:
+      - "manager-v*.*.*"
+      - "manager-v*"
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish as GitHub Release (true/false)"
+        required: false
+        default: "false"
+        type: boolean
+      version_tag:
+        description: "Release tag name (e.g. manager-v0.1.0)"
+        required: false
+        default: "manager-v0.1.0"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: manager-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-manager:
+    name: Build (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os: macos-latest
+            name: macOS-arm64
+            args: "--target aarch64-apple-darwin"
+          - os: ubuntu-22.04
+            name: Linux-x86_64
+            args: ""
+          - os: windows-latest
+            name: Windows-x86_64
+            args: ""
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.os == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./manager/src-tauri -> target"
+
+      - name: Install Linux build dependencies
+        if: matrix.platform.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install Node / Bun dependencies
+        working-directory: ./manager
+        run: bun install --frozen-lockfile
+
+      - name: Determine release publishing
+        id: release_check
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/manager-v* ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish_release }}" == "true" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ inputs.version_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "tag=manager-v0.1.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and Package with Tauri Action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ./manager
+          args: ${{ matrix.platform.args }}
+          tagName: ${{ steps.release_check.outputs.tag }}
+          releaseName: "Gradebook Manager ${{ steps.release_check.outputs.tag }}"
+          releaseBody: "Automated multi-platform release of Gradebook Manager portable desktop application."
+          releaseDraft: false
+          prerelease: false
+          includeRelease: ${{ steps.release_check.outputs.should_release == 'true' }}
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradebook-manager-${{ matrix.platform.name }}
+          path: |
+            manager/src-tauri/target/**/bundle/
+            manager/src-tauri/target/release/*.exe
+            manager/src-tauri/target/release/*.AppImage
+            manager/src-tauri/target/release/gradebook-manager
+          if-no-files-found: warn
