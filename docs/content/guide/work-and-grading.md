@@ -111,12 +111,15 @@ Good to know:
 
 **Publish** makes the work visible to students. **Questions lock at publish** - changing them afterwards would silently rescore work already handed in. Title, instructions, due date and points stay editable. **Close** stops new submissions without hiding anything.
 
-## Marking
+## Marking and publishing grades
 
 Open the work to see every student in the course, whether they handed in or not.
 
 - **Quizzes** mark themselves, except essay and file questions, which you mark question by question from **Answers**.
-- **Assignments and offline work**: type the score (up to two decimal places) and optional feedback. Students see the mark and feedback once it is marked.
+- **Assignments and offline work**: type the score (up to two decimal places) and optional feedback.
+- **Grades unpublished by default**: while grading, marks and feedback are hidden from students ("Grades unpublished" status). Teachers can grade all students before any results are visible to them.
+- **Publish grades to students**: once grading is ready, click **Publish grades to students**. Students receive a notification that their assignment was graded and can now see their score and feedback.
+- **Editing after publishing**: you can continue to edit any student's grade or feedback after publishing. You can also **Unpublish grades** to hide marks again if necessary.
 
 ### Rubrics
 
