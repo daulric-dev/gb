@@ -79,6 +79,44 @@ export function AiQuestionDrafts({
   const saving = useSignal<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function checkStatus() {
+      try {
+        const res = await aiDraftApi.quizQuestionsStatus(activityId);
+        if (!active) return;
+        if (res.status === "running") {
+          working.value = true;
+          pollTimer = setTimeout(checkStatus, 2500);
+        } else if (res.status === "ready") {
+          working.value = false;
+          if (res.drafts && res.drafts.length > 0 && drafts.value.length === 0) {
+            const stamp = Date.now();
+            drafts.value = res.drafts.map((d, i) => ({ key: `ai-${stamp}-${i}`, draft: d }));
+            rejected.value = res.rejected ?? 0;
+          }
+        } else if (res.status === "failed") {
+          working.value = false;
+          if (res.error) {
+            toast.error(res.error);
+            void aiDraftApi.clearQuizQuestions(activityId).catch(() => {});
+          }
+        }
+      } catch {
+        // Non-fatal if status check fails
+      }
+    }
+
+    void checkStatus();
+
+    return () => {
+      active = false;
+      if (pollTimer) clearTimeout(pollTimer);
+    };
+  }, [activityId, drafts, working, rejected]);
+
+  useEffect(() => {
     if (!open.value || pages.value) return;
     api<CoursePageSummary[]>(`/courses/${courseId}/pages`)
       .then((p) => {
@@ -107,30 +145,53 @@ export function AiQuestionDrafts({
 
   async function generate(e: React.FormEvent) {
     e.preventDefault();
-    if (!ready) return;
+    if (!ready || working.value) return;
     working.value = true;
+    // Dismiss the dialog to the background so the user can continue editing their quiz.
+    const timer = setTimeout(() => {
+      open.value = false;
+    }, 400);
+
     try {
-      const out = await aiDraftApi.quizQuestions(courseId, {
+      await aiDraftApi.startQuizQuestions(activityId, {
         ...(source.value === "page" ? { pageId: pageId.value } : { text: text.value }),
         count: n,
         kinds: kinds.value,
       });
-      const stamp = Date.now();
-      drafts.value = [
-        ...drafts.value,
-        ...out.drafts.map((d, i) => ({ key: `ai-${stamp}-${i}`, draft: d })),
-      ];
-      rejected.value = out.rejected;
-      open.value = false;
-      toast.success(
-        out.drafts.length
-          ? `${out.drafts.length} draft question${out.drafts.length === 1 ? "" : "s"} to review`
-          : "The AI returned no usable questions. Try again or change the source.",
-      );
+
+      const poll = async () => {
+        try {
+          const res = await aiDraftApi.quizQuestionsStatus(activityId);
+          if (res.status === "ready") {
+            working.value = false;
+            const stamp = Date.now();
+            const newDrafts = (res.drafts ?? []).map((d, i) => ({ key: `ai-${stamp}-${i}`, draft: d }));
+            drafts.value = [...drafts.value, ...newDrafts];
+            rejected.value = res.rejected ?? 0;
+            open.value = false;
+            toast.success(
+              newDrafts.length
+                ? `${newDrafts.length} draft question${newDrafts.length === 1 ? "" : "s"} ready to review`
+                : "The AI returned no usable questions. Try again or change the source.",
+            );
+          } else if (res.status === "failed") {
+            working.value = false;
+            toast.error(res.error || "Failed to generate questions");
+            void aiDraftApi.clearQuizQuestions(activityId).catch(() => {});
+          } else if (res.status === "running") {
+            setTimeout(poll, 2500);
+          }
+        } catch (err) {
+          working.value = false;
+          toast.error(aiErrorMessage(err));
+        }
+      };
+
+      setTimeout(poll, 2500);
     } catch (err) {
-      toast.error(aiErrorMessage(err));
-    } finally {
+      clearTimeout(timer);
       working.value = false;
+      toast.error(aiErrorMessage(err));
     }
   }
 
@@ -138,7 +199,11 @@ export function AiQuestionDrafts({
     saving.value = key;
     try {
       await api(`/activities/${activityId}/questions`, { method: "POST", body: payload });
-      drafts.value = drafts.value.filter((d) => d.key !== key);
+      const next = drafts.value.filter((d) => d.key !== key);
+      drafts.value = next;
+      if (next.length === 0) {
+        void aiDraftApi.clearQuizQuestions(activityId).catch(() => {});
+      }
       toast.success("Question added");
       onAddedAction();
     } catch (err) {
@@ -148,20 +213,59 @@ export function AiQuestionDrafts({
     }
   }
 
-  const discard = (key: string) => (drafts.value = drafts.value.filter((d) => d.key !== key));
+  const discard = (key: string) => {
+    const next = drafts.value.filter((d) => d.key !== key);
+    drafts.value = next;
+    if (next.length === 0) {
+      void aiDraftApi.clearQuizQuestions(activityId).catch(() => {});
+    }
+  };
+
+  const discardAll = () => {
+    drafts.value = [];
+    void aiDraftApi.clearQuizQuestions(activityId).catch(() => {});
+  };
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => (open.value = true)}>
-        <Sparkles className="mr-1.5 size-4" aria-hidden />
-        Draft questions with AI
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => (open.value = true)}
+        disabled={working.value}
+      >
+        {working.value ? (
+          <>
+            <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+            Generating questions…
+          </>
+        ) : (
+          <>
+            <Sparkles className="mr-1.5 size-4" aria-hidden />
+            Draft questions with AI
+          </>
+        )}
       </Button>
+
+      {working.value && (
+        <Card className="border-primary/30 bg-primary/5 animate-fade-in">
+          <CardContent className="flex items-center gap-3 py-3 text-sm">
+            <Loader2 className="size-4 animate-spin text-primary shrink-0" />
+            <div>
+              <p className="font-medium text-foreground">Generating questions…</p>
+              <p className="text-xs text-muted-foreground">
+                The AI is drafting questions in the background. You can continue editing your quiz.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {drafts.value.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">AI drafts ({drafts.value.length})</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => (drafts.value = [])}>
+            <Button variant="ghost" size="sm" onClick={discardAll}>
               Discard all
             </Button>
           </CardHeader>
@@ -299,12 +403,12 @@ export function AiQuestionDrafts({
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => (open.value = false)} disabled={working.value}>
-                Cancel
+              <Button type="button" variant="outline" onClick={() => (open.value = false)}>
+                {working.value ? "Run in background" : "Cancel"}
               </Button>
               <Button type="submit" disabled={!ready || working.value}>
                 {working.value && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
-                {working.value ? "Drafting…" : "Draft questions"}
+                {working.value ? "Generating questions…" : "Draft questions"}
               </Button>
             </DialogFooter>
           </form>

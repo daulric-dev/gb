@@ -310,6 +310,7 @@ model course_notification {
   user_profile        user_profile      @relation(fields: [user_profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_profile_id, activity_id], map: "course_notification_user_activity_key", where: raw("(kind = 'activity_published'::text)"))
+  @@unique([user_profile_id, activity_id], map: "course_notification_user_grades_published_key", where: raw("(kind = 'grades_published'::text)"))
   @@unique([user_profile_id, activity_id], map: "course_notification_user_peer_review_assigned_key", where: raw("(kind = 'peer_review_assigned'::text)"))
   @@unique([user_profile_id, activity_id], map: "course_notification_user_peer_review_ready_key", where: raw("(kind = 'peer_review_ready'::text)"))
   @@unique([user_profile_id, announcement_id], map: "course_notification_user_announcement_key")
