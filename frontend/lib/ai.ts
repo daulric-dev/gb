@@ -127,6 +127,14 @@ export interface QuizDrafts {
   note: string;
 }
 
+export interface QuizQuestionDraftStatus {
+  status: "idle" | "running" | "ready" | "failed";
+  drafts?: QuestionDraft[];
+  rejected?: number;
+  error?: string;
+  startedAt?: number;
+}
+
 export interface RubricSuggestion {
   criterionId: string;
   ratingId: string | null;
@@ -306,6 +314,20 @@ export const aiDraftApi = {
     courseId: string,
     body: { pageId?: string; text?: string; count: number; kinds: AiQuestionKind[] },
   ) => api<QuizDrafts>(`/courses/${courseId}/ai/quiz-questions`, { method: "POST", body }),
+  quizQuestionsStatus: (activityId: string) =>
+    api<QuizQuestionDraftStatus>(`/activities/${activityId}/ai/quiz-questions`),
+  startQuizQuestions: (
+    activityId: string,
+    body: { pageId?: string; text?: string; count: number; kinds: AiQuestionKind[] },
+  ) =>
+    api<QuizQuestionDraftStatus>(`/activities/${activityId}/ai/quiz-questions`, {
+      method: "POST",
+      body,
+    }),
+  clearQuizQuestions: (activityId: string) =>
+    api<{ ok: boolean }>(`/activities/${activityId}/ai/quiz-questions`, {
+      method: "DELETE",
+    }),
   rubricFeedback: (activityId: string, studentId: string) =>
     api<RubricSuggestions>(`/activities/${activityId}/ai/rubric-feedback`, {
       method: "POST",
