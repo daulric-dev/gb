@@ -16,6 +16,9 @@ export const scanInstanceDirectory = (path: string): Promise<InstanceScanResult>
 export const saveInstanceConfig = (config: InstanceConfig): Promise<void> =>
   invoke("save_instance_config", { config });
 
+export const removeRegisteredInstance = (instanceId: string): Promise<void> =>
+  invoke("remove_registered_instance", { instanceId });
+
 export const loadRegisteredInstances = (): Promise<InstanceConfig[]> =>
   invoke("load_registered_instances");
 
@@ -36,9 +39,10 @@ export const installInstancePackages = (rootPath: string): Promise<string> =>
 
 // ── Service Execution & Package Management ─────────────────────────────────
 export const installServicePackages = (
+  instanceId: string,
   rootPath: string,
   service: "backend" | "frontend" | "all"
-): Promise<string> => invoke("install_service_packages", { rootPath, service });
+): Promise<string> => invoke("install_service_packages", { instanceId, rootPath, service });
 
 export const startService = (
   instanceId: string,
@@ -51,6 +55,11 @@ export const stopService = (
   service: "backend" | "frontend"
 ): Promise<string> => invoke("stop_service", { instanceId, service });
 
+export const deleteService = (
+  instanceId: string,
+  service: "backend" | "frontend"
+): Promise<string> => invoke("delete_service", { instanceId, service });
+
 export const getServiceStatus = (
   instanceId: string,
   service: "backend" | "frontend"
@@ -59,7 +68,7 @@ export const getServiceStatus = (
 
 export const getServiceLogs = (
   instanceId: string,
-  service: "backend" | "frontend",
+  service: "backend" | "frontend" | "install" | "upgrade" | string,
   maxLines?: number
 ): Promise<string[]> =>
   invoke("get_service_logs", { instanceId, service, maxLines });
@@ -88,9 +97,10 @@ export const verifyReleaseChecksum = (
 
 // ── Upgrade commands ───────────────────────────────────────────────────────
 export const extractAndUpgradeInstance = (
+  instanceId: string,
   instanceRoot: string,
   zipPath: string
-): Promise<string> => invoke("extract_and_upgrade_instance", { instanceRoot, zipPath });
+): Promise<string> => invoke("extract_and_upgrade_instance", { instanceId, instanceRoot, zipPath });
 
 // ── SSH commands ───────────────────────────────────────────────────────────
 export const testSshConnection = (

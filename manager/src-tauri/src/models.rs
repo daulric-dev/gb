@@ -61,10 +61,16 @@ pub struct SystemEnvironment {
     pub has_bun: bool,
     pub bun_version: Option<String>,
     pub bun_path: Option<String>,
+    pub has_pm2: bool,
+    pub pm2_version: Option<String>,
+    pub pm2_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceHealth {
+    pub root_exists: bool,
+    pub has_backend: bool,
+    pub has_frontend: bool,
     pub has_node_modules: bool,
     pub has_bun: bool,
     pub bun_version: Option<String>,
@@ -92,6 +98,10 @@ pub struct ServiceRuntimeStatus {
     pub service: String,
     pub running: bool,
     pub pid: Option<u32>,
+    /// The PM2 process name, e.g. `gb-7026999a-backend`
+    pub pm2_name: Option<String>,
+    /// Raw PM2 status string: "online", "stopped", "errored", "not_registered", …
+    pub pm2_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

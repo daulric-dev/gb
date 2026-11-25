@@ -14,10 +14,16 @@ fn get_cache_dir() -> PathBuf {
 
 #[tauri::command]
 pub async fn fetch_github_releases(owner: String, repo: String) -> Result<Vec<GitHubRelease>, String> {
-    let url = format!("https://api.github.com/repos/{}/{}/releases", owner, repo);
+    let effective_owner = if owner.is_empty() || owner == "daulric" {
+        "daulric-dev"
+    } else {
+        owner.as_str()
+    };
+    let url = format!("https://api.github.com/repos/{}/{}/releases", effective_owner, repo);
 
     let client = reqwest::Client::builder()
         .user_agent("GradeBook-Desktop-Manager/1.0")
+        .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|e| e.to_string())?;
 

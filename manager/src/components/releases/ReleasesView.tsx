@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import type { GitHubRelease } from "@/types/releases";
 
-const OWNER = "daulric";
+const OWNER = "daulric-dev";
 const REPO = "gb";
 
 function ProgressBar({ percent }: { percent: number }) {
@@ -90,9 +90,10 @@ function ReleaseCard({
 }
 
 export function ReleasesView() {
-  const { instances } = useInstances();
+  const { instances, fetchLogs, refresh } = useInstances();
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const selectedInstance = instances.find((i) => i.id === selectedInstanceId) ?? null;
+  const [upgradeLogs, setUpgradeLogs] = useState<string[]>([]);
 
   const { releases, loading, error, progress, fetchReleases, upgrade, clearProgress } =
     useReleases(OWNER, REPO);
@@ -101,11 +102,34 @@ export function ReleasesView() {
     fetchReleases();
   }, [fetchReleases]);
 
+  useEffect(() => {
+    if (!progress || !selectedInstance) return;
+    const timer = setInterval(async () => {
+      try {
+        const lines = await fetchLogs(selectedInstance.id, "upgrade");
+        if (lines && lines.length > 0) {
+          setUpgradeLogs(lines);
+        }
+      } catch (e) {
+        console.error("Failed to fetch upgrade logs:", e);
+      }
+    }, 800);
+    return () => clearInterval(timer);
+  }, [progress, selectedInstance, fetchLogs]);
+
   const handleUpgrade = async (release: GitHubRelease) => {
     if (!selectedInstance) return;
+    setUpgradeLogs([]);
     const zipAsset = release.assets.find((a) => a.name.endsWith(".zip") && !a.name.includes("debug"));
     if (!zipAsset) return;
-    await upgrade(selectedInstance.root_path, zipAsset.browser_download_url, undefined, zipAsset.name);
+    await upgrade(
+      selectedInstance.id,
+      selectedInstance.root_path,
+      zipAsset.browser_download_url,
+      undefined,
+      zipAsset.name
+    );
+    await refresh();
   };
 
   return (
@@ -157,8 +181,23 @@ export function ReleasesView() {
             {progress.message}
           </div>
           <ProgressBar percent={progress.percent} />
+
+          {upgradeLogs.length > 0 && (
+            <div className="mt-2 p-3 bg-[#0a0e14] rounded-xl font-mono text-xs text-cyan-300 max-h-48 overflow-y-auto space-y-1 select-text">
+              {upgradeLogs.map((line, idx) => (
+                <div key={idx} className="whitespace-pre-wrap break-all leading-relaxed">
+                  {line}
+                </div>
+              ))}
+            </div>
+          )}
+
           {(progress.step === "done" || progress.step === "error") && (
-            <Button variant="text" onClick={clearProgress}>Dismiss</Button>
+            <div className="flex justify-end pt-2">
+              <Button variant="text" onClick={() => { clearProgress(); setUpgradeLogs([]); }}>
+                Dismiss
+              </Button>
+            </div>
           )}
         </Card>
       )}

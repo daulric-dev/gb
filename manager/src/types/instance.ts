@@ -36,9 +36,15 @@ export interface SystemEnvironment {
   has_bun: boolean;
   bun_version?: string | null;
   bun_path?: string | null;
+  has_pm2: boolean;
+  pm2_version?: string | null;
+  pm2_path?: string | null;
 }
 
 export interface InstanceHealth {
+  root_exists: boolean;
+  has_backend: boolean;
+  has_frontend: boolean;
   has_node_modules: boolean;
   has_bun: boolean;
   bun_version?: string | null;
@@ -49,4 +55,6 @@ export interface ServiceRuntimeStatus {
   service: string;
   running: boolean;
   pid?: number | null;
+  pm2_name?: string | null;
+  pm2_status?: string | null;
 }

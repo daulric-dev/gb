@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use crate::models::{InstanceConfig, InstanceHealth, InstanceScanResult, SystemEnvironment};
 
-fn get_registry_path() -> PathBuf {
+pub fn get_registry_path() -> PathBuf {
     let mut dir = dirs_next::data_dir().unwrap_or_else(|| PathBuf::from("."));
     dir.push("gradebook-manager");
     let _ = fs::create_dir_all(&dir);
@@ -59,11 +59,23 @@ pub fn find_bun() -> Option<(PathBuf, String)> {
 
 #[tauri::command]
 pub fn check_system_environment() -> SystemEnvironment {
+    use crate::commands::service::find_pm2;
     let bun_info = find_bun();
+
+    // Check PM2
+    let pm2_info = find_pm2().and_then(|pm2_path| {
+        let out = std::process::Command::new(&pm2_path).arg("--version").output().ok()?;
+        let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if ver.is_empty() { None } else { Some((pm2_path, ver)) }
+    });
+
     SystemEnvironment {
         has_bun: bun_info.is_some(),
         bun_version: bun_info.as_ref().map(|(_, v)| v.clone()),
         bun_path: bun_info.map(|(p, _)| p.to_string_lossy().to_string()),
+        has_pm2: pm2_info.is_some(),
+        pm2_version: pm2_info.as_ref().map(|(_, v)| v.clone()),
+        pm2_path: pm2_info.map(|(p, _)| p.to_string_lossy().to_string()),
     }
 }
 
@@ -118,6 +130,27 @@ pub fn scan_instance_directory(path: String) -> InstanceScanResult {
         }
     }
 
+    // Fallback 1: check existing instance.json config
+    if detected_version.is_none() {
+        if let Some(ref cfg) = existing_config {
+            if cfg.version != "unknown" && !cfg.version.is_empty() {
+                detected_version = Some(cfg.version.clone());
+            }
+        }
+    }
+
+    // Fallback 2: deduce from directory name (e.g. "gradebook-1.0.0" -> "1.0.0")
+    if detected_version.is_none() {
+        if let Some(dir_name) = root.file_name().and_then(|n| n.to_str()) {
+            if let Some(idx) = dir_name.find('-') {
+                let candidate = &dir_name[idx + 1..];
+                if candidate.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                    detected_version = Some(candidate.to_string());
+                }
+            }
+        }
+    }
+
     let valid = has_backend && has_frontend;
 
     InstanceScanResult {
@@ -137,8 +170,11 @@ pub fn scan_instance_directory(path: String) -> InstanceScanResult {
 #[tauri::command]
 pub async fn check_instance_health(root_path: String, url: String) -> InstanceHealth {
     let root = Path::new(&root_path);
+    let root_exists = root.exists() && root.is_dir();
+    let has_backend = root_exists && root.join("backend").is_dir();
+    let has_frontend = root_exists && root.join("frontend").is_dir();
     let node_modules_path = root.join("node_modules");
-    let has_node_modules = node_modules_path.exists() && node_modules_path.is_dir();
+    let has_node_modules = root_exists && node_modules_path.is_dir();
 
     let bun_info = find_bun();
     let has_bun = bun_info.is_some();
@@ -147,6 +183,9 @@ pub async fn check_instance_health(root_path: String, url: String) -> InstanceHe
     let is_online = check_instance_online(url).await;
 
     InstanceHealth {
+        root_exists,
+        has_backend,
+        has_frontend,
         has_node_modules,
         has_bun,
         bun_version,
@@ -236,6 +275,25 @@ pub fn save_instance_config(config: InstanceConfig) -> Result<(), String> {
     fs::write(&reg_path, reg_content)
         .map_err(|e| format!("Failed to write registry: {}", e))?;
 
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_registered_instance(instance_id: String) -> Result<(), String> {
+    let reg_path = get_registry_path();
+    if reg_path.exists() {
+        let content = fs::read_to_string(&reg_path)
+            .map_err(|e| format!("Failed to read registry: {}", e))?;
+        let mut instances: Vec<InstanceConfig> = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse registry: {}", e))?;
+
+        instances.retain(|i| i.id != instance_id);
+
+        let reg_content = serde_json::to_string_pretty(&instances)
+            .map_err(|e| format!("Failed to serialize registry: {}", e))?;
+        fs::write(&reg_path, reg_content)
+            .map_err(|e| format!("Failed to write registry: {}", e))?;
+    }
     Ok(())
 }
 

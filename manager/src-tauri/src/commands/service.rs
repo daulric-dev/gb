@@ -1,25 +1,29 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader};
-use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::State;
-use crate::commands::instance::{find_bun, sanitize_workspaces};
+use crate::commands::instance::sanitize_workspaces;
 use crate::models::ServiceRuntimeStatus;
 
-const MAX_LOG_LINES: usize = 200;
+const MAX_LOG_LINES: usize = 500;
 
+// ─── Process state (kept for install/upgrade log streaming) ─────────────────
 #[derive(Default)]
 pub struct ProcessState {
-    pub children: Mutex<HashMap<String, Child>>,
     pub logs: Arc<Mutex<HashMap<String, VecDeque<String>>>>,
 }
 
-fn make_key(instance_id: &str, service: &str) -> String {
+pub fn make_key(instance_id: &str, service: &str) -> String {
     format!("{}:{}", instance_id, service)
 }
 
-fn append_log_arc(logs: &Arc<Mutex<HashMap<String, VecDeque<String>>>>, key: &str, line: String) {
+pub fn append_log_arc_pub(
+    logs: &Arc<Mutex<HashMap<String, VecDeque<String>>>>,
+    key: &str,
+    line: String,
+) {
     if let Ok(mut map) = logs.lock() {
         let queue = map.entry(key.to_string()).or_insert_with(VecDeque::new);
         if queue.len() >= MAX_LOG_LINES {
@@ -29,12 +33,137 @@ fn append_log_arc(logs: &Arc<Mutex<HashMap<String, VecDeque<String>>>>, key: &st
     }
 }
 
+// ─── PM2 helpers ─────────────────────────────────────────────────────────────
+
+/// Find the pm2 binary. Checks PATH first, then common bun/npm install locations.
+pub fn find_pm2() -> Option<PathBuf> {
+    // 1. PATH
+    if let Ok(o) = Command::new("pm2").arg("--version").output() {
+        if o.status.success() {
+            return Some(PathBuf::from("pm2"));
+        }
+    }
+    // 2. Explicit locations
+    let candidates = vec![
+        dirs_next::home_dir().map(|h| h.join(".bun").join("bin").join("pm2")),
+        dirs_next::home_dir().map(|h| h.join(".npm-global").join("bin").join("pm2")),
+        dirs_next::home_dir().map(|h| h.join(".yarn").join("bin").join("pm2")),
+        Some(PathBuf::from("/opt/homebrew/bin/pm2")),
+        Some(PathBuf::from("/usr/local/bin/pm2")),
+        Some(PathBuf::from("/usr/bin/pm2")),
+    ];
+    for c in candidates.into_iter().flatten() {
+        if c.exists() {
+            if let Ok(o) = Command::new(&c).arg("--version").output() {
+                if o.status.success() {
+                    return Some(c);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Build the unique PM2 process name for a service.
+/// Format: `gb-{short_instance_id}-{service}` (e.g. `gb-7026999a-backend`)
+fn pm2_name(instance_id: &str, service: &str) -> String {
+    let short = &instance_id[..instance_id.len().min(8)];
+    format!("gb-{}-{}", short, service)
+}
+
+/// Run a pm2 command and capture stdout+stderr.
+fn run_pm2(pm2: &Path, args: &[&str]) -> Result<String, String> {
+    let out = Command::new(pm2)
+        .args(args)
+        .output()
+        .map_err(|e| format!("Failed to run pm2 {}: {}", args.join(" "), e))?;
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    if out.status.success() {
+        Ok(stdout)
+    } else {
+        Err(format!("{}{}", stdout, stderr))
+    }
+}
+
+// ─── Logged command helper (for install/upgrade) ─────────────────────────────
+
+fn run_logged_command(
+    logs: &Arc<Mutex<HashMap<String, VecDeque<String>>>>,
+    key: &str,
+    cmd_label: &str,
+    mut cmd: Command,
+) -> Result<(), String> {
+    append_log_arc_pub(logs, key, format!("> {}", cmd_label));
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to start {}: {}", cmd_label, e))?;
+
+    let stdout_opt = child.stdout.take();
+    let stderr_opt = child.stderr.take();
+
+    let logs_out = Arc::clone(logs);
+    let key_out = key.to_string();
+    let t_out = std::thread::spawn(move || {
+        if let Some(stdout) = stdout_opt {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().flatten() {
+                append_log_arc_pub(&logs_out, &key_out, line);
+            }
+        }
+    });
+
+    let logs_err = Arc::clone(logs);
+    let key_err = key.to_string();
+    let t_err = std::thread::spawn(move || {
+        if let Some(stderr) = stderr_opt {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().flatten() {
+                append_log_arc_pub(&logs_err, &key_err, line);
+            }
+        }
+    });
+
+    let _ = t_out.join();
+    let _ = t_err.join();
+
+    let status = child.wait().map_err(|e| format!("Wait failed: {}", e))?;
+    if status.success() {
+        append_log_arc_pub(logs, key, format!("✓ {} completed successfully.", cmd_label));
+        Ok(())
+    } else {
+        let err_msg = format!("✗ {} failed with exit status: {}", cmd_label, status);
+        append_log_arc_pub(logs, key, err_msg.clone());
+        Err(err_msg)
+    }
+}
+
+// ─── Tauri commands ───────────────────────────────────────────────────────────
+
 #[tauri::command]
-pub fn install_service_packages(root_path: String, service: String) -> Result<String, String> {
+pub fn install_service_packages(
+    state: State<ProcessState>,
+    instance_id: String,
+    root_path: String,
+    service: String,
+) -> Result<String, String> {
+    use crate::commands::instance::find_bun;
+
     let root = Path::new(&root_path);
     if !root.exists() {
         return Err("Target instance root does not exist".into());
     }
+
+    let log_key = make_key(&instance_id, "install");
+    if let Ok(mut logs) = state.logs.lock() {
+        logs.insert(log_key.clone(), VecDeque::new());
+    }
+
+    append_log_arc_pub(
+        &state.logs,
+        &log_key,
+        format!("[Gradebook Manager] Starting package installation ({}) in {:?}...", service, root),
+    );
 
     sanitize_workspaces(root);
 
@@ -48,18 +177,9 @@ pub fn install_service_packages(root_path: String, service: String) -> Result<St
             if !backend_dir.exists() {
                 return Err("Backend directory does not exist".into());
             }
-            let output = Command::new(&bun_cmd)
-                .arg("install")
-                .current_dir(&backend_dir)
-                .output()
-                .map_err(|e| format!("Failed to run bun install in backend: {}", e))?;
-
-            if !output.status.success() {
-                return Err(format!(
-                    "Backend install failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
+            let mut cmd = Command::new(&bun_cmd);
+            cmd.arg("install").current_dir(&backend_dir);
+            run_logged_command(&state.logs, &log_key, "bun install in backend/", cmd)?;
             Ok("Backend packages installed successfully.".into())
         }
         "frontend" => {
@@ -67,68 +187,54 @@ pub fn install_service_packages(root_path: String, service: String) -> Result<St
             if !frontend_dir.exists() {
                 return Err("Frontend directory does not exist".into());
             }
-            let output = Command::new(&bun_cmd)
-                .arg("install")
-                .current_dir(&frontend_dir)
-                .output()
-                .map_err(|e| format!("Failed to run bun install in frontend: {}", e))?;
-
-            if !output.status.success() {
-                return Err(format!(
-                    "Frontend install failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
+            let mut cmd = Command::new(&bun_cmd);
+            cmd.arg("install").current_dir(&frontend_dir);
+            run_logged_command(&state.logs, &log_key, "bun install in frontend/", cmd)?;
             Ok("Frontend packages installed successfully.".into())
         }
         "all" | _ => {
-            // Run sequentially: backend then frontend
             let mut summary = Vec::new();
 
             let backend_dir = root.join("backend");
             if backend_dir.exists() {
-                let out = Command::new(&bun_cmd)
-                    .arg("install")
-                    .current_dir(&backend_dir)
-                    .output()
-                    .map_err(|e| format!("Backend install error: {}", e))?;
-                if out.status.success() {
-                    summary.push("Backend: ✓ Installed");
-                } else {
-                    summary.push("Backend: ✗ Failed");
+                let mut cmd = Command::new(&bun_cmd);
+                cmd.arg("install").current_dir(&backend_dir);
+                match run_logged_command(&state.logs, &log_key, "bun install in backend/", cmd) {
+                    Ok(_) => summary.push("Backend: ✓"),
+                    Err(_) => summary.push("Backend: ✗"),
                 }
             }
 
             let frontend_dir = root.join("frontend");
             if frontend_dir.exists() {
-                let out = Command::new(&bun_cmd)
-                    .arg("install")
-                    .current_dir(&frontend_dir)
-                    .output()
-                    .map_err(|e| format!("Frontend install error: {}", e))?;
-                if out.status.success() {
-                    summary.push("Frontend: ✓ Installed");
-                } else {
-                    summary.push("Frontend: ✗ Failed");
+                let mut cmd = Command::new(&bun_cmd);
+                cmd.arg("install").current_dir(&frontend_dir);
+                match run_logged_command(&state.logs, &log_key, "bun install in frontend/", cmd) {
+                    Ok(_) => summary.push("Frontend: ✓"),
+                    Err(_) => summary.push("Frontend: ✗"),
                 }
             }
 
-            // Also sync root workspaces
-            let out = Command::new(&bun_cmd)
-                .arg("install")
-                .current_dir(root)
-                .output();
-            if let Ok(o) = out {
-                if o.status.success() {
-                    summary.push("Root workspace: ✓ Synced");
-                }
+            let mut cmd = Command::new(&bun_cmd);
+            cmd.arg("install").current_dir(root);
+            if run_logged_command(&state.logs, &log_key, "bun install in root workspace", cmd).is_ok() {
+                summary.push("Root: ✓");
             }
 
+            append_log_arc_pub(
+                &state.logs,
+                &log_key,
+                "[Gradebook Manager] All packages installation complete.".into(),
+            );
             Ok(summary.join(" | "))
         }
     }
 }
 
+/// Start a service via PM2.
+///
+/// PM2 ecosystem config written to `{root}/.pm2/{service}.config.cjs` so PM2
+/// can restart with the same settings on `pm2 resurrect`.
 #[tauri::command]
 pub fn start_service(
     state: State<ProcessState>,
@@ -136,16 +242,11 @@ pub fn start_service(
     root_path: String,
     service: String,
 ) -> Result<String, String> {
-    let key = make_key(&instance_id, &service);
+    use crate::commands::instance::find_bun;
 
-    // Check if already running
-    if let Ok(mut children) = state.children.lock() {
-        if let Some(child) = children.get_mut(&key) {
-            if let Ok(None) = child.try_wait() {
-                return Err(format!("{} is already running", service));
-            }
-        }
-    }
+    let pm2 = find_pm2().ok_or_else(|| {
+        "PM2 is not installed. Run: bun add -g pm2  (or npm install -g pm2)".to_string()
+    })?;
 
     let root = Path::new(&root_path);
     if !root.exists() {
@@ -157,116 +258,163 @@ pub fn start_service(
     let (bun_cmd, _) = find_bun().ok_or_else(|| {
         "Bun is not installed or could not be found. Please install Bun first (https://bun.sh)".to_string()
     })?;
+    let bun_str = bun_cmd.to_string_lossy().to_string();
 
-    let (dir, script) = match service.as_str() {
-        "backend" => (root.join("backend"), "start:dev"),
+    let name = pm2_name(&instance_id, &service);
+    let log_key = make_key(&instance_id, &service);
+
+    // Clear old in-memory logs
+    if let Ok(mut logs) = state.logs.lock() {
+        logs.insert(log_key.clone(), VecDeque::new());
+    }
+
+    // Determine service directory and start script
+    let (service_dir, start_script) = match service.as_str() {
+        "backend"  => (root.join("backend"),  "start:dev"),
         "frontend" => (root.join("frontend"), "dev"),
         _ => return Err(format!("Unknown service: {}", service)),
     };
 
-    if !dir.exists() {
-        return Err(format!("Directory {:?} does not exist", dir));
+    if !service_dir.exists() {
+        return Err(format!("Service directory {:?} does not exist", service_dir));
     }
 
-    // Clear previous logs
-    if let Ok(mut logs) = state.logs.lock() {
-        logs.insert(key.clone(), VecDeque::new());
+    // Write a PM2 ecosystem config file so the process is re-startable
+    let pm2_dir = root.join(".pm2");
+    let _ = std::fs::create_dir_all(&pm2_dir);
+    let config_path = pm2_dir.join(format!("{}.config.cjs", service));
+    let ecosystem = format!(
+        r#"module.exports = {{
+  apps: [{{
+    name: "{}",
+    interpreter: "{}",
+    interpreter_args: "run {}",
+    cwd: "{}",
+    watch: false,
+    autorestart: true,
+    max_restarts: 5,
+    env: {{
+      NODE_ENV: "{}",
+    }},
+  }}],
+}};
+"#,
+        name,
+        bun_str,
+        start_script,
+        service_dir.to_string_lossy(),
+        if service == "frontend" { "development" } else { "development" },
+    );
+    std::fs::write(&config_path, &ecosystem)
+        .map_err(|e| format!("Failed to write PM2 ecosystem config: {}", e))?;
+
+    // If already registered in PM2, restart it; otherwise start fresh
+    let jlist = run_pm2(&pm2, &["jlist"]).unwrap_or_default();
+    let already_exists = jlist.contains(&format!("\"name\":\"{}\"", name))
+        || jlist.contains(&format!("\"name\": \"{}\"", name));
+
+    if already_exists {
+        append_log_arc_pub(
+            &state.logs, &log_key,
+            format!("[PM2] Process '{}' already registered — restarting…", name),
+        );
+        run_pm2(&pm2, &["restart", &name])
+            .map_err(|e| format!("pm2 restart failed: {}", e))?;
+    } else {
+        append_log_arc_pub(
+            &state.logs, &log_key,
+            format!("[PM2] Starting '{}' via ecosystem config…", name),
+        );
+        let config_str = config_path.to_string_lossy().to_string();
+        run_pm2(&pm2, &["start", &config_str])
+            .map_err(|e| format!("pm2 start failed: {}", e))?;
     }
 
-    append_log_arc(
-        &state.logs,
-        &key,
-        format!("[Gradebook Manager] Starting {} in {:?}...", service, dir),
+    // Save PM2 process list so it survives reboots
+    let _ = run_pm2(&pm2, &["save", "--force"]);
+
+    append_log_arc_pub(
+        &state.logs, &log_key,
+        format!("[PM2] ✓ '{}' is now managed by PM2.", name),
     );
 
-    let mut cmd = Command::new(bun_cmd);
-    cmd.args(["run", script])
-        .current_dir(&dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start {}: {}", service, e))?;
-
-    // Spawn stdout reader thread to capture live logs
-    if let Some(stdout) = child.stdout.take() {
-        let key_clone = key.clone();
-        let logs_arc = Arc::clone(&state.logs);
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().flatten() {
-                append_log_arc(&logs_arc, &key_clone, line);
-            }
-        });
-    }
-
-    // Spawn stderr reader thread
-    if let Some(stderr) = child.stderr.take() {
-        let key_clone = key.clone();
-        let logs_arc = Arc::clone(&state.logs);
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().flatten() {
-                append_log_arc(&logs_arc, &key_clone, format!("[err] {}", line));
-            }
-        });
-    }
-
-    let pid = child.id();
-    if let Ok(mut children) = state.children.lock() {
-        children.insert(key, child);
-    }
-
-    Ok(format!("{} started (PID {})", service, pid))
+    Ok(format!("{} started via PM2 (name: {})", service, name))
 }
 
+/// Stop a PM2-managed service (leaves it in PM2's list as `stopped`).
 #[tauri::command]
 pub fn stop_service(
     state: State<ProcessState>,
     instance_id: String,
     service: String,
 ) -> Result<String, String> {
-    let key = make_key(&instance_id, &service);
+    let pm2 = find_pm2().ok_or_else(|| "PM2 not found".to_string())?;
+    let name = pm2_name(&instance_id, &service);
+    let log_key = make_key(&instance_id, &service);
 
-    let child = {
-        let mut children = state
-            .children
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        children.remove(&key)
-    };
+    append_log_arc_pub(
+        &state.logs, &log_key,
+        format!("[PM2] Stopping '{}'…", name),
+    );
 
-    if let Some(mut c) = child {
-        let _ = c.kill();
-        let _ = c.wait();
-        append_log_arc(&state.logs, &key, format!("[Gradebook Manager] Stopped {}.", service));
-        Ok(format!("{} stopped", service))
-    } else {
-        Ok(format!("{} was not running", service))
-    }
+    run_pm2(&pm2, &["stop", &name])
+        .map_err(|e| format!("pm2 stop failed: {}", e))?;
+
+    let _ = run_pm2(&pm2, &["save", "--force"]);
+
+    append_log_arc_pub(&state.logs, &log_key, format!("[PM2] ✓ '{}' stopped.", name));
+    Ok(format!("{} stopped", service))
 }
 
+/// Delete a PM2 process entirely (called when removing an instance).
+#[tauri::command]
+pub fn delete_service(
+    _state: State<ProcessState>,
+    instance_id: String,
+    service: String,
+) -> Result<String, String> {
+    let pm2 = find_pm2().ok_or_else(|| "PM2 not found".to_string())?;
+    let name = pm2_name(&instance_id, &service);
+    let _ = run_pm2(&pm2, &["delete", &name]);
+    let _ = run_pm2(&pm2, &["save", "--force"]);
+    Ok(format!("{} deleted from PM2", service))
+}
+
+/// Query PM2 for the status of a service.
+/// Parses the JSON output of `pm2 jlist` to find the matching process.
 #[tauri::command]
 pub fn get_service_status(
-    state: State<ProcessState>,
+    _state: State<ProcessState>,
     instance_id: String,
     service: String,
 ) -> ServiceRuntimeStatus {
-    let key = make_key(&instance_id, &service);
+    let name = pm2_name(&instance_id, &service);
 
-    if let Ok(mut children) = state.children.lock() {
-        if let Some(child) = children.get_mut(&key) {
-            match child.try_wait() {
-                Ok(None) => {
-                    return ServiceRuntimeStatus {
-                        service,
-                        running: true,
-                        pid: Some(child.id()),
-                    };
-                }
-                _ => {
-                    children.remove(&key);
+    if let Some(pm2) = find_pm2() {
+        if let Ok(json_str) = run_pm2(&pm2, &["jlist"]) {
+            if let Ok(list) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                if let Some(arr) = list.as_array() {
+                    for proc in arr {
+                        let proc_name = proc["name"].as_str().unwrap_or("");
+                        if proc_name == name {
+                            let pm2_status = proc["pm2_env"]["status"]
+                                .as_str()
+                                .unwrap_or("stopped");
+                            let running = pm2_status == "online";
+                            let pid = if running {
+                                proc["pid"].as_u64().map(|p| p as u32)
+                            } else {
+                                None
+                            };
+                            return ServiceRuntimeStatus {
+                                service,
+                                running,
+                                pid,
+                                pm2_name: Some(name),
+                                pm2_status: Some(pm2_status.to_string()),
+                            };
+                        }
+                    }
                 }
             }
         }
@@ -276,9 +424,13 @@ pub fn get_service_status(
         service,
         running: false,
         pid: None,
+        pm2_name: Some(name),
+        pm2_status: Some("not_registered".to_string()),
     }
 }
 
+/// Fetch logs for a service from PM2's log files, or from the in-memory
+/// buffer for install/upgrade operations.
 #[tauri::command]
 pub fn get_service_logs(
     state: State<ProcessState>,
@@ -286,18 +438,80 @@ pub fn get_service_logs(
     service: String,
     max_lines: Option<usize>,
 ) -> Vec<String> {
-    let key = make_key(&instance_id, &service);
     let limit = max_lines.unwrap_or(MAX_LOG_LINES);
 
-    if let Ok(logs) = state.logs.lock() {
-        if let Some(queue) = logs.get(&key) {
-            let start = if queue.len() > limit {
-                queue.len() - limit
-            } else {
-                0
-            };
-            return queue.iter().skip(start).cloned().collect();
+    // install / upgrade logs come from the in-memory buffer
+    if service == "install" || service == "upgrade" {
+        let key = make_key(&instance_id, &service);
+        if let Ok(logs) = state.logs.lock() {
+            if let Some(queue) = logs.get(&key) {
+                let start = if queue.len() > limit { queue.len() - limit } else { 0 };
+                return queue.iter().skip(start).cloned().collect();
+            }
+        }
+        return Vec::new();
+    }
+
+    // For backend/frontend, read from PM2 log files
+    let name = pm2_name(&instance_id, &service);
+
+    // PM2 stores logs at ~/.pm2/logs/{name}-out.log and {name}-error.log
+    let pm2_home = std::env::var("PM2_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| dirs_next::home_dir().map(|h| h.join(".pm2")))
+        .unwrap_or_else(|| PathBuf::from("/tmp/.pm2"));
+
+    let out_log = pm2_home.join("logs").join(format!("{}-out.log", name));
+    let err_log = pm2_home.join("logs").join(format!("{}-error.log", name));
+
+    let mut lines: Vec<(u64, String)> = Vec::new();
+
+    // Read stdout log
+    if let Ok(content) = std::fs::read_to_string(&out_log) {
+        for (i, line) in content.lines().enumerate() {
+            lines.push((i as u64, line.to_string()));
         }
     }
-    Vec::new()
+
+    // Read stderr log and interleave (prefix with [err])
+    if let Ok(content) = std::fs::read_to_string(&err_log) {
+        for line in content.lines() {
+            if !line.trim().is_empty() {
+                lines.push((u64::MAX, format!("[err] {}", line)));
+            }
+        }
+    }
+
+    // Return last `limit` lines from stdout (err lines appended at end)
+    let out_lines: Vec<String> = {
+        let stdout_lines: Vec<String> = lines
+            .iter()
+            .filter(|(idx, _)| *idx != u64::MAX)
+            .map(|(_, l)| l.clone())
+            .collect();
+        let err_lines: Vec<String> = lines
+            .iter()
+            .filter(|(idx, _)| *idx == u64::MAX)
+            .map(|(_, l)| l.clone())
+            .collect();
+
+        let start = if stdout_lines.len() > limit { stdout_lines.len() - limit } else { 0 };
+        let mut result: Vec<String> = stdout_lines[start..].to_vec();
+        result.extend(err_lines);
+        result
+    };
+
+    // Fall back to in-memory buffer (populated on start_service)
+    if out_lines.is_empty() {
+        let key = make_key(&instance_id, &service);
+        if let Ok(logs) = state.logs.lock() {
+            if let Some(queue) = logs.get(&key) {
+                let start = if queue.len() > limit { queue.len() - limit } else { 0 };
+                return queue.iter().skip(start).cloned().collect();
+            }
+        }
+    }
+
+    out_lines
 }

@@ -28,6 +28,7 @@ export function useReleases(owner: string, repo: string) {
 
   const upgrade = useCallback(
     async (
+      instanceId: string,
       instanceRoot: string,
       downloadUrl: string,
       sha256?: string,
@@ -58,7 +59,7 @@ export function useReleases(owner: string, repo: string) {
 
       setProgress({ step: "upgrading", message: "Extracting and upgrading instance…", percent: 70 });
       try {
-        const result = await extractAndUpgradeInstance(instanceRoot, zipPath);
+        const result = await extractAndUpgradeInstance(instanceId, instanceRoot, zipPath);
         setProgress({ step: "done", message: result, percent: 100 });
       } catch (e) {
         setProgress({ step: "error", message: `Upgrade failed: ${e}`, percent: 0 });
