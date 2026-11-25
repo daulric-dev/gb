@@ -6,6 +6,7 @@ import type { NotificationCategory } from '@/notifications/notification-preferen
 
 export type CourseNotificationKind =
   | 'activity_published'
+  | 'grades_published'
   | 'announcement'
   | 'discussion_topic'
   | 'discussion_reply'
@@ -59,6 +60,7 @@ export const COURSE_CHANNEL = 'coursework';
 /** The preference category (account settings) each notice kind belongs to. */
 export const CATEGORY_OF: Record<CourseNotificationKind, NotificationCategory> = {
   activity_published: 'coursework',
+  grades_published: 'grades',
   announcement: 'announcements',
   discussion_topic: 'discussions',
   discussion_reply: 'discussions',
@@ -328,6 +330,19 @@ export class CourseNotificationService {
       title: `Reviews ready: ${activity.title}`,
       body: 'Your classmates\' reviews of your work are ready',
       data: { type: 'course.peer_review', courseId, activityId: activity.id },
+    });
+  }
+
+  /**
+   * Grades published: tell the students whose work was marked. Never throws.
+   */
+  async gradesPublished(courseId: string, activity: { id: string; title: string },studentIds: string[]): Promise<void> {
+    await this.notifyStudents(courseId, studentIds, {
+      kind: 'grades_published',
+      activity_id: activity.id,
+      title: `Assignment graded: ${activity.title}`,
+      body: `Your grade for ${activity.title} is now available`,
+      data: { type: 'course.grades_published', courseId, activityId: activity.id },
     });
   }
 

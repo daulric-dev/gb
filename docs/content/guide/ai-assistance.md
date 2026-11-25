@@ -88,10 +88,13 @@ Any service that speaks the OpenAI *chat completions* API:
 
 | Service | Base URL (example) | Model (example) |
 | --- | --- | --- |
-| OpenAI | `https://api.openai.com/v1` | `gpt-5` |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-chat` (V3), `deepseek-reasoner` (R1) |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o`, `gpt-4o-mini`, `gpt-5` |
 | Azure OpenAI (OpenAI-compatible endpoint) | `https://<resource>.openai.azure.com/openai/v1` | your deployment name |
-| OpenRouter | `https://openrouter.ai/api/v1` | `anthropic/claude-opus-5-5`, ... |
-| Ollama (local) | `http://<server>:11434/v1` | `llama3.3` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `deepseek/deepseek-r1`, `anthropic/claude-opus-5-5`, ... |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile`, `deepseek-r1-distill-llama-70b` |
+| Mistral AI | `https://api.mistral.ai/v1` | `mistral-small-latest`, `mistral-large-latest` |
+| Ollama (local) | `http://<server>:11434/v1` | `llama3.3`, `deepseek-r1` |
 | vLLM (local) | `http://<server>:8000/v1` | the served model |
 | LM Studio (local) | `http://<server>:1234/v1` | the loaded model |
 
@@ -151,10 +154,12 @@ Features**.
 - **Quiz questions:** in a draft quiz, choose **Draft questions with AI**.
   Pick a course page or paste text, how many questions (up to 10) and which
   types (multiple choice, true or false, short answer, multiple select,
-  numeric, matching, ordering, essay). The drafts appear under the quiz as
-  editable questions; check each one and press **Accept and add**, or
-  **Discard**. A short "why" note with each draft is for you only and is not
-  saved. Drafts that break the question rules are left out.
+  numeric, matching, ordering, essay). Generation runs as a background job on the
+  server with live status ("Generating questions…") that persists across page
+  reloads. When ready, the drafts appear under the quiz as editable questions;
+  check each one and press **Accept and add**, or **Discard**. A short "why" note
+  with each draft is for you only and is not saved. Drafts that break the question
+  rules are left out.
 - **Rubric feedback:** in **Mark with rubric**, choose **Suggest levels and
   feedback with AI**. A suggestion appears under each criterion; **Use**
   copies it into the form, where you can change it. Nothing is saved until

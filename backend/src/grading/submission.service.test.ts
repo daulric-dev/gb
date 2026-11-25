@@ -48,7 +48,7 @@ function stubAccess(
     require: async (_u: string, courseId: string, roles: readonly string[]) => {
       if (!staff) throw new NotFoundException('Course not found');
       if (!roles.includes(staff)) throw new ForbiddenException('nope');
-      return { course: { id: courseId }, role: staff };
+      return { course: { id: courseId, school_id: 'school-1' }, role: staff };
     },
     requireStudent: async (_s: string, courseId: string) => {
       if (!enrolled) throw new NotFoundException('Course not found');
@@ -64,6 +64,8 @@ function build(
   access: ReturnType<typeof stubAccess> = stubAccess(),
   auditLog?: { record: (...args: any[]) => Promise<void> },
   cache?: any,
+  events?: any,
+  notices?: any,
 ) {
   const prisma = createMockPrisma();
   setup(prisma);
@@ -86,6 +88,8 @@ function build(
     undefined,
     auditLog as any,
     cache as any,
+    events as any,
+    notices as any,
   );
   return { service, prisma };
 }
@@ -525,6 +529,49 @@ describe('SubmissionService student access', () => {
     expect(view.submission!.feedback).toBeNull();
   });
 
+  test('score and feedback remain hidden when marked until grades are published', async () => {
+    const { service } = build(
+      studentTables({
+        activity: { ...ACTIVITY, grades_published_at: null },
+        submission: {
+          id: 'sub-1',
+          status: 'graded',
+          score: 18,
+          feedback: 'Well done',
+          excused: false,
+        },
+      }),
+    );
+    const view = await service.getForStudent('stu-1', 'act-1');
+    expect(view.gradesPublished).toBe(false);
+    expect(view.gradesPublishedAt).toBeNull();
+    expect(view.submission!.status).toBe('submitted');
+    expect(view.submission!.score).toBeNull();
+    expect(view.submission!.feedback).toBeNull();
+  });
+
+  test('score and feedback are visible once grades are published', async () => {
+    const publishedAt = new Date('2026-11-20T12:00:00Z');
+    const { service } = build(
+      studentTables({
+        activity: { ...ACTIVITY, grades_published_at: publishedAt },
+        submission: {
+          id: 'sub-1',
+          status: 'graded',
+          score: 18,
+          feedback: 'Well done',
+          excused: false,
+        },
+      }),
+    );
+    const view = await service.getForStudent('stu-1', 'act-1');
+    expect(view.gradesPublished).toBe(true);
+    expect(view.gradesPublishedAt).toBe(publishedAt.toISOString());
+    expect(view.submission!.status).toBe('graded');
+    expect(view.submission!.score).toBe(18);
+    expect(view.submission!.feedback).toBe('Well done');
+  });
+
   test('a quiz submission never writes grading.grade', async () => {
     const { service, prisma } = build((p) => {
       studentTables({
@@ -820,6 +867,7 @@ describe('SubmissionService student access', () => {
           status: 'published',
           assignment_group_id: null,
           published_at: new Date('2026-09-01T00:00:00Z'),
+          grades_published_at: new Date('2026-09-01T00:00:00Z'),
           omit_from_final_grade: true,
           created_at: new Date('2026-09-01T00:00:00Z'),
         },
@@ -1079,6 +1127,147 @@ describe('SubmissionService marking', () => {
     expect(list[1].submission!.excused).toBe(true);
     expect(list[1].submission!.excusedReason).toBe('Ill');
     expect(list[1].submission!.score).toBe(10);
+  });
+
+  test('publishGrades updates grades_published_at and notifies graded students', async () => {
+    let notifiedCourseId: string | null = null;
+    let notifiedActivity: any = null;
+    let notifiedStudentIds: string[] = [];
+    const notices = {
+      gradesPublished: async (cId: string, act: any, stuIds: string[]) => {
+        notifiedCourseId = cId;
+        notifiedActivity = act;
+        notifiedStudentIds = stuIds;
+      },
+    };
+    let auditArgs: any[] = [];
+    const auditLog = {
+      record: async (...recordArgs: any[]) => {
+        auditArgs = recordArgs;
+      },
+    };
+
+    const { service, prisma } = build(
+      (p) => {
+        p.activity.findUnique.mockResolvedValue({
+          id: 'act-1',
+          course_id: 'course-1',
+          title: 'Midterm Essay',
+          status: 'published',
+          points: 100,
+          kind: 'assignment',
+        });
+        p.activity.update.mockImplementation(async ({ data }: any) => ({
+          id: 'act-1',
+          course_id: 'course-1',
+          title: 'Midterm Essay',
+          grades_published_at: data.grades_published_at,
+        }));
+        p.submission.findMany.mockResolvedValue([
+          { student_id: 'stu-1' },
+          { student_id: 'stu-2' },
+        ]);
+      },
+      {},
+      stubAccess('teacher'),
+      auditLog,
+      undefined,
+      undefined,
+      notices,
+    );
+
+    const result = await service.publishGrades('user-1', 'act-1');
+    expect(result.activityId).toBe('act-1');
+    expect(result.gradesPublishedAt).toBeTruthy();
+
+    expect(notifiedCourseId).toBe('course-1');
+    expect(notifiedActivity).toEqual({ id: 'act-1', title: 'Midterm Essay' });
+    expect(notifiedStudentIds).toEqual(['stu-1', 'stu-2']);
+
+    expect(auditArgs[1]).toBe('school-1');
+    expect(auditArgs[2]).toEqual({ id: 'user-1' });
+    expect(auditArgs[3].entity).toBe('activity');
+    expect(auditArgs[3].action).toBe('update');
+  });
+
+  test('publishGrades refuses an activity in draft status', async () => {
+    const { service } = build((p) => {
+      p.activity.findUnique.mockResolvedValue({
+        id: 'act-1',
+        course_id: 'course-1',
+        title: 'Draft Essay',
+        status: 'draft',
+        points: 100,
+        kind: 'assignment',
+      });
+    });
+
+    await expect(
+      service.publishGrades('user-1', 'act-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  test('unpublishGrades resets grades_published_at to null', async () => {
+    const { service, prisma } = build((p) => {
+      p.activity.findUnique.mockResolvedValue({
+        id: 'act-1',
+        course_id: 'course-1',
+        title: 'Essay',
+        status: 'published',
+        points: 100,
+        kind: 'assignment',
+        grades_published_at: new Date('2026-11-20T10:00:00Z'),
+      });
+      p.activity.update.mockResolvedValue({
+        id: 'act-1',
+        grades_published_at: null,
+      });
+    });
+
+    const result = await service.unpublishGrades('user-1', 'act-1');
+    expect(result.activityId).toBe('act-1');
+    expect(result.gradesPublishedAt).toBeNull();
+    expect(prisma.activity.update).toHaveBeenCalledWith({
+      where: { id: 'act-1' },
+      data: { grades_published_at: null },
+      select: { id: true, grades_published_at: true },
+    });
+  });
+
+  test('teachers can edit grades after publication and student is notified', async () => {
+    let notifiedStudentIds: string[] = [];
+    const notices = {
+      gradesPublished: async (_cId: string, _act: any, stuIds: string[]) => {
+        notifiedStudentIds = stuIds;
+      },
+    };
+    const { service } = build(
+      (p) => {
+        markTables({
+          activity: {
+            ...PUBLISHED,
+            title: 'Final Paper',
+            grades_published_at: new Date('2026-11-20T10:00:00Z'),
+          },
+          existing: { id: 'sub-1', score: new Prisma.Decimal(14), feedback: 'Initial' },
+        })(p);
+      },
+      {},
+      stubAccess('teacher'),
+      undefined,
+      undefined,
+      undefined,
+      notices,
+    );
+
+    const updated = await service.grade('user-1', 'act-1', 'stu-1', {
+      score: 18,
+      feedback: 'Revised after review',
+    });
+
+    expect(updated.score).toBe(18);
+    expect(updated.feedback).toBe('Revised after review');
+    expect(notifiedStudentIds).toEqual(['stu-1']);
   });
 
   describe('quiz attempts, draft saves, and timers', () => {

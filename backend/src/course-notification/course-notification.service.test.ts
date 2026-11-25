@@ -81,6 +81,37 @@ describe('CourseNotificationService events', () => {
     expect(pushes[0].userIds).toEqual(['u-2']);
   });
 
+  test('grades published tells students with graded work under grades category', async () => {
+    const { prisma, service, pushes } = setup();
+    await service.gradesPublished(
+      'course-1',
+      { id: 'act-1', title: 'Lab report' },
+      ['stu-1', 'stu-2'],
+    );
+
+    const rows = rowsOf(prisma);
+    expect(rows.map((r: any) => r.user_profile_id)).toEqual(['u-1', 'u-2']);
+    expect(rows[0]).toMatchObject({
+      course_id: 'course-1',
+      kind: 'grades_published',
+      activity_id: 'act-1',
+      title: 'Assignment graded: Lab report',
+      body: 'Your grade for Lab report is now available',
+    });
+
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0].message).toMatchObject({
+      title: 'Biology 101: Assignment graded: Lab report',
+      channelId: 'coursework',
+      category: 'grades',
+      data: {
+        type: 'course.grades_published',
+        courseId: 'course-1',
+        activityId: 'act-1',
+      },
+    });
+  });
+
   test('a draft course tells nobody', async () => {
     const { prisma, service, pushes } = setup({ status: 'draft' });
     await service.activityPublished('course-1', {

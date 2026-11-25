@@ -39,7 +39,7 @@ export const POSTGRES_CHECKS: readonly (readonly [string, string, string])[] = [
   ["course.attendance_session", "attendance_session_window", "CHECK ((closes_at > opened_at))"],
   ["course.course", "course_banner_color_check", "CHECK (((banner_color IS NULL) OR (banner_color = ANY (ARRAY['indigo'::text, 'violet'::text, 'blue'::text, 'sky'::text, 'teal'::text, 'green'::text, 'amber'::text, 'orange'::text, 'rose'::text, 'slate'::text]))))"],
   ["course.course", "course_name_not_blank", "CHECK ((btrim(name) <> ''::text))"],
-  ["course.course_notification", "course_notification_kind_check", "CHECK ((kind = ANY (ARRAY['activity_published'::text, 'announcement'::text, 'discussion_topic'::text, 'discussion_reply'::text, 'peer_review_assigned'::text, 'peer_review_ready'::text])))"],
+  ["course.course_notification", "course_notification_kind_check", "CHECK ((kind = ANY (ARRAY['activity_published'::text, 'announcement'::text, 'discussion_topic'::text, 'discussion_reply'::text, 'peer_review_assigned'::text, 'peer_review_ready'::text, 'grades_published'::text])))"],
   ["course.discussion_reply", "discussion_reply_body_check", "CHECK (((deleted_at IS NOT NULL) OR (btrim(body) <> ''::text)))"],
   ["course.discussion_topic", "discussion_topic_title_not_blank", "CHECK ((btrim(title) <> ''::text))"],
   ["course.library_import", "library_import_mode_check", "CHECK ((mode = ANY (ARRAY['append'::text, 'new_course'::text])))"],

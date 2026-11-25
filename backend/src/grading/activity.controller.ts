@@ -169,6 +169,22 @@ export class ActivityController {
     return this.activities.publish(req.user.id as string, activityId);
   }
 
+  @Post('activities/:activityId/publish-grades')
+  async publishGrades(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+  ) {
+    return this.submissions.publishGrades(req.user.id as string, activityId);
+  }
+
+  @Post('activities/:activityId/unpublish-grades')
+  async unpublishGrades(
+    @Req() req: any,
+    @Param('activityId', ParseUUIDPipe) activityId: string,
+  ) {
+    return this.submissions.unpublishGrades(req.user.id as string, activityId);
+  }
+
   @Post('activities/:activityId/close')
   async close(
     @Req() req: any,

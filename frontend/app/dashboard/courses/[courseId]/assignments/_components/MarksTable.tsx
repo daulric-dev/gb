@@ -7,10 +7,12 @@ import { useSignals } from "@preact/signals-react/runtime";
 import {
   Archive,
   Eye,
+  EyeOff,
   ListChecks,
   Loader2,
   MessageSquareText,
   Search,
+  Send,
   SlashIcon,
   Sparkles,
   Table2,
@@ -140,6 +142,9 @@ export function MarksTable({
   onAssessedAction,
   lockdownBrowser = false,
   similarity = {},
+  gradesPublishedAt = null,
+  onPublishGradesAction,
+  onUnpublishGradesAction,
 }: {
   activityId: string;
   kind: ActivityKind;
@@ -161,6 +166,10 @@ export function MarksTable({
    * threshold). A prompt to look, never a verdict; never shown to students.
    */
   similarity?: Record<string, SimilarityFlag>;
+  /** When grades were published to students, if at all. */
+  gradesPublishedAt?: string | null;
+  onPublishGradesAction?: () => void;
+  onUnpublishGradesAction?: () => void;
 }) {
   useSignals();
   const search = useSignal("");
@@ -378,6 +387,42 @@ export function MarksTable({
           {average !== null &&
             ` · average ${Math.round(average * 10) / 10}/${points}`}
         </span>
+        {!isDraft && canGrade && (
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className={
+                gradesPublishedAt
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              }
+            >
+              {gradesPublishedAt ? "Grades published" : "Grades unpublished"}
+            </Badge>
+            {gradesPublishedAt ? (
+              onUnpublishGradesAction && (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={onUnpublishGradesAction}
+                >
+                  <EyeOff className="mr-1.5 size-3.5" />
+                  Unpublish
+                </Button>
+              )
+            ) : (
+              onPublishGradesAction && (
+                <Button
+                  size="xs"
+                  onClick={onPublishGradesAction}
+                >
+                  <Send className="mr-1.5 size-3.5" />
+                  Publish grades
+                </Button>
+              )
+            )}
+          </div>
+        )}
         {aiOn && aiOverview.value && (
           <div className="ml-auto">
             <AiGradingBatchControls
@@ -400,6 +445,26 @@ export function MarksTable({
         <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
           Publish this first. Marks can be entered once it is published.
         </p>
+      )}
+
+      {!isDraft && !gradesPublishedAt && canGrade && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">
+          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+            <EyeOff className="size-4 shrink-0" />
+            <span>
+              Grades are unpublished. Students cannot see scores or feedback until you publish grades.
+            </span>
+          </div>
+          {onPublishGradesAction && (
+            <Button
+              size="sm"
+              onClick={onPublishGradesAction}
+            >
+              <Send className="mr-1.5 size-3.5" />
+              Publish grades to students
+            </Button>
+          )}
+        </div>
       )}
 
       <div className="overflow-x-auto rounded-lg border">

@@ -9,6 +9,8 @@ import {
   ArrowLeft,
   Boxes,
   Calculator,
+  Eye,
+  EyeOff,
   Languages,
   Loader2,
   Lock,
@@ -25,6 +27,7 @@ import {
   toLocalInput,
 } from "@/lib/courses/format";
 import { Markdown } from "@/components/markdown";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -329,7 +332,10 @@ export default function CourseActivityPage() {
     if (ok) editing.value = false;
   }
 
-  async function action(path: "publish" | "close", success: string) {
+  async function action(
+    path: "publish" | "close" | "publish-grades" | "unpublish-grades",
+    success: string,
+  ) {
     working.value = true;
     try {
       await api(`/activities/${activityId}/${path}`, {
@@ -454,6 +460,18 @@ export default function CourseActivityPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ActivityStatusBadge status={a.status} />
+          {!isDraft && (
+            <Badge
+              variant="outline"
+              className={
+                a.gradesPublishedAt
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              }
+            >
+              {a.gradesPublishedAt ? "Grades published" : "Grades unpublished"}
+            </Badge>
+          )}
           {canManage && isDraft && (
             <Button
               onClick={() =>
@@ -494,6 +512,30 @@ export default function CourseActivityPage() {
                   >
                     <Lock className="mr-2 size-4" />
                     Close submissions
+                  </DropdownMenuItem>
+                )}
+                {!isDraft && (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      action(
+                        a.gradesPublishedAt ? "unpublish-grades" : "publish-grades",
+                        a.gradesPublishedAt
+                          ? "Grades hidden from students"
+                          : "Grades published to students",
+                      )
+                    }
+                  >
+                    {a.gradesPublishedAt ? (
+                      <>
+                        <EyeOff className="mr-2 size-4" />
+                        Unpublish grades
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="mr-2 size-4" />
+                        Publish grades
+                      </>
+                    )}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -973,6 +1015,13 @@ export default function CourseActivityPage() {
             rows={submissions.value}
             canGrade
             isDraft={isDraft}
+            gradesPublishedAt={a.gradesPublishedAt}
+            onPublishGradesAction={() =>
+              action("publish-grades", "Grades published to students")
+            }
+            onUnpublishGradesAction={() =>
+              action("unpublish-grades", "Grades hidden from students")
+            }
             onRowsChangeAction={(rows) => (submissions.value = rows)}
             lockdownBrowser={a.kind === "quiz" && !!a.lockdownBrowser}
             similarity={similarity.value}

@@ -28,7 +28,8 @@ export type CourseNotificationKind =
   | "discussion_topic"
   | "discussion_reply"
   | "peer_review_assigned"
-  | "peer_review_ready";
+  | "peer_review_ready"
+  | "grades_published";
 
 export interface CourseNotification {
   id: string;
@@ -102,6 +103,8 @@ export function noticeKindLabel(kind: string | undefined): string {
       return "Peer review";
     case "peer_review_ready":
       return "Reviews ready";
+    case "grades_published":
+      return "Grade published";
     default:
       return "Notice";
   }

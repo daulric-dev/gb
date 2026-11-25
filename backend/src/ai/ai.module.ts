@@ -7,6 +7,7 @@ import {
   CourseAiController,
   CourseBuilderAiController,
   OrganisationAiController,
+  QuizAiController,
   SchoolAiController,
 } from './ai.controller';
 import { AiOrgFeatureGuard } from './ai-feature.guard';
@@ -26,7 +27,13 @@ import { AiCourseService } from './ai-course.service';
  */
 @Module({
   imports: [OrganisationModule, CourseModule, GradingModule, MasteryModule],
-  controllers: [OrganisationAiController, SchoolAiController, CourseAiController, CourseBuilderAiController],
+  controllers: [
+    OrganisationAiController,
+    SchoolAiController,
+    CourseAiController,
+    QuizAiController,
+    CourseBuilderAiController,
+  ],
   providers: [AiOrgFeatureGuard, AiProviderService, AiService, AiDraftsService, AiCourseService],
   exports: [AiService],
 })

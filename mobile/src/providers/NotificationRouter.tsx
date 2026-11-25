@@ -68,7 +68,8 @@ export function NotificationRouter() {
     } else if (
       data?.type === "course.activity_published" ||
       data?.type === "course.announcement" ||
-      data?.type === "course.peer_review"
+      data?.type === "course.peer_review" ||
+      data?.type === "course.grades_published"
     ) {
       // New work opens its work screen; an announcement opens the course on
       // its Announcements section.

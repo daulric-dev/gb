@@ -130,6 +130,7 @@ describe('ActivityService.create', () => {
         'dueAt',
         'status',
         'publishedAt',
+        'gradesPublishedAt',
         'allowFile',
         'allowMultipleFiles',
         'allowText',

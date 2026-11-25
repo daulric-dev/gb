@@ -190,6 +190,35 @@ export class CourseAiController {
 }
 
 /**
+ * Quiz question AI drafting with persistent background job tracking.
+ */
+@ApiTags('AI assistance')
+@ApiBearerAuth()
+@UseGuards(AuthGuard)
+@Controller('activities/:activityId/ai/quiz-questions')
+export class QuizAiController {
+  constructor(private readonly drafts: AiDraftsService) {}
+
+  @Get()
+  status(@Req() req: Req, @Param('activityId', uuid) activityId: string) {
+    return this.drafts.getQuizQuestionsStatus(req.user.id, activityId);
+  }
+
+  @Throttle(GENERATE_THROTTLE)
+  @Post()
+  @HttpCode(200)
+  start(@Req() req: Req, @Param('activityId', uuid) activityId: string, @Body() dto: QuizDraftDto) {
+    return this.drafts.startQuizQuestionsForActivity(req.user.id, activityId, dto);
+  }
+
+  @Delete()
+  @HttpCode(200)
+  clear(@Req() req: Req, @Param('activityId', uuid) activityId: string) {
+    return this.drafts.clearQuizQuestions(req.user.id, activityId);
+  }
+}
+
+/**
  * The AI course builder. Course teachers and admins (not TAs; announcement
  * drafts follow announcement permissions, so TAs too), `ai_assistance` on
  * for the course's school (checked by the service). Every `ai/...` route

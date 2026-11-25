@@ -307,6 +307,35 @@ describe('quiz question drafts', () => {
     );
     expect(m).toMatchObject({ prompt: 'Match', options: [{ label: 'a', matchLabel: '1' }, { label: 'b', matchLabel: '2' }] });
   });
+
+  test('activity-scoped quiz question job: start, status polling, and clear', async () => {
+    const { drafts, prisma } = await build(QUIZ_OUT);
+    prisma.activity.findUnique.mockResolvedValue({ id: 'act-quiz-1', course_id: COURSE, kind: 'quiz' });
+
+    // Status is idle before starting
+    const initial = await drafts.getQuizQuestionsStatus('teacher', 'act-quiz-1');
+    expect(initial).toEqual({ status: 'idle' });
+
+    // Start background drafting
+    const start = await drafts.startQuizQuestionsForActivity('teacher', 'act-quiz-1', {
+      text: 'Paris is the capital of France.',
+      count: 2,
+      kinds: ['multiple_choice', 'numeric'],
+    });
+    expect(start.status).toBe('running');
+
+    // Polling status returns ready after background resolution
+    await new Promise((r) => setTimeout(r, 20));
+    const polled = await drafts.getQuizQuestionsStatus('teacher', 'act-quiz-1');
+    expect(polled.status).toBe('ready');
+    expect(polled.drafts?.length).toBeGreaterThan(0);
+
+    // Clear deletes the job
+    const cleared = await drafts.clearQuizQuestions('teacher', 'act-quiz-1');
+    expect(cleared).toEqual({ ok: true });
+    const afterClear = await drafts.getQuizQuestionsStatus('teacher', 'act-quiz-1');
+    expect(afterClear).toEqual({ status: 'idle' });
+  });
 });
 
 const RUBRIC = {

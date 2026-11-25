@@ -1,7 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CourseAccessService, MANAGE_ROLES, STAFF_ROLES } from '@/course/access/course-access.service';
 import { FeatureService } from '@/features/feature.service';
+import { CacheService } from '@/cache/cache.service';
 import { validateQuestion } from '@/grading/quiz-questions';
 import {
   AI_DRAFT_NOTE,
@@ -47,6 +48,17 @@ interface ModelRubric {
   feedback: string;
 }
 
+export interface QuestionDraftJob {
+  activityId: string;
+  courseId: string;
+  status: 'running' | 'ready' | 'failed';
+  drafts?: QuestionDraft[];
+  rejected?: number;
+  error?: string;
+  startedAt: number;
+  finishedAt?: number;
+}
+
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
 
 /**
@@ -58,11 +70,14 @@ const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
  */
 @Injectable()
 export class AiDraftsService {
+  private readonly questionJobs = new Map<string, QuestionDraftJob>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CourseAccessService,
     private readonly features: FeatureService,
     private readonly ai: AiService,
+    @Optional() private readonly cache?: CacheService,
   ) {}
 
   /** Names of the course's students, staff and guardians (redacted from anything sent). */
@@ -132,6 +147,120 @@ export class AiDraftsService {
       else rejected++;
     }
     return { drafts, rejected, requestId: out.requestId, provider: provider.name, note: AI_DRAFT_NOTE };
+  }
+
+  async startQuizQuestionsForActivity(userId: string, activityId: string, dto: QuizDraftDto) {
+    const activity = await this.prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, course_id: true, kind: true },
+    });
+    if (!activity || !activity.course_id || activity.kind !== 'quiz') {
+      throw new NotFoundException('Quiz not found');
+    }
+    await this.course(userId, activity.course_id, MANAGE_ROLES);
+
+    const existing = this.questionJobs.get(activityId);
+    if (existing && existing.status === 'running') {
+      return { status: 'running', startedAt: existing.startedAt };
+    }
+
+    const startedAt = Date.now();
+    const job: QuestionDraftJob = {
+      activityId,
+      courseId: activity.course_id,
+      status: 'running',
+      startedAt,
+    };
+    this.questionJobs.set(activityId, job);
+    if (this.cache) {
+      void this.cache.set(`ai:quiz-questions:${activityId}`, job, 3600);
+    }
+
+    void this.quizQuestions(userId, activity.course_id, dto)
+      .then((out) => {
+        const cur = this.questionJobs.get(activityId);
+        if (cur && cur.startedAt === startedAt) {
+          const readyJob: QuestionDraftJob = {
+            activityId,
+            courseId: activity.course_id,
+            status: 'ready',
+            drafts: out.drafts,
+            rejected: out.rejected,
+            startedAt,
+            finishedAt: Date.now(),
+          };
+          this.questionJobs.set(activityId, readyJob);
+          if (this.cache) {
+            void this.cache.set(`ai:quiz-questions:${activityId}`, readyJob, 3600);
+          }
+        }
+      })
+      .catch((err) => {
+        const cur = this.questionJobs.get(activityId);
+        if (cur && cur.startedAt === startedAt) {
+          const failedJob: QuestionDraftJob = {
+            activityId,
+            courseId: activity.course_id,
+            status: 'failed',
+            error: err?.message || 'Failed to generate questions',
+            startedAt,
+            finishedAt: Date.now(),
+          };
+          this.questionJobs.set(activityId, failedJob);
+          if (this.cache) {
+            void this.cache.set(`ai:quiz-questions:${activityId}`, failedJob, 3600);
+          }
+        }
+      });
+
+    return { status: 'running', startedAt };
+  }
+
+  async getQuizQuestionsStatus(userId: string, activityId: string) {
+    const activity = await this.prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, course_id: true, kind: true },
+    });
+    if (!activity || !activity.course_id || activity.kind !== 'quiz') {
+      throw new NotFoundException('Quiz not found');
+    }
+    await this.course(userId, activity.course_id, STAFF_ROLES);
+
+    let job = this.questionJobs.get(activityId);
+    if (!job && this.cache) {
+      const cached = (await this.cache.get(`ai:quiz-questions:${activityId}`)) as QuestionDraftJob | null;
+      if (cached) {
+        job = cached;
+        this.questionJobs.set(activityId, cached);
+      }
+    }
+    if (!job) {
+      return { status: 'idle' };
+    }
+    return {
+      status: job.status,
+      drafts: job.drafts ?? [],
+      rejected: job.rejected ?? 0,
+      error: job.error,
+      startedAt: job.startedAt,
+    };
+  }
+
+  async clearQuizQuestions(userId: string, activityId: string) {
+    const activity = await this.prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, course_id: true, kind: true },
+    });
+    if (!activity || !activity.course_id || activity.kind !== 'quiz') {
+      throw new NotFoundException('Quiz not found');
+    }
+    await this.course(userId, activity.course_id, MANAGE_ROLES);
+
+    this.questionJobs.delete(activityId);
+    if (this.cache) {
+      void this.cache.delete(`ai:quiz-questions:${activityId}`);
+    }
+    return { ok: true };
   }
 
   // ── 2. rubric feedback ────────────────────────────────────────────────
