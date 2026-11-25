@@ -59,23 +59,28 @@ pub fn find_bun() -> Option<(PathBuf, String)> {
 
 #[tauri::command]
 pub fn check_system_environment() -> SystemEnvironment {
-    use crate::commands::service::find_pm2;
+    use crate::commands::service::run_pm2;
+
     let bun_info = find_bun();
 
-    // Check PM2
-    let pm2_info = find_pm2().and_then(|pm2_path| {
-        let out = std::process::Command::new(&pm2_path).arg("--version").output().ok()?;
-        let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if ver.is_empty() { None } else { Some((pm2_path, ver)) }
-    });
+    // Check PM2 by executing it directly
+    let pm2_info = run_pm2(&["--version"])
+        .ok()
+        .filter(|version| !version.trim().is_empty());
+
+    let has_pm2 = pm2_info.is_some();
 
     SystemEnvironment {
         has_bun: bun_info.is_some(),
         bun_version: bun_info.as_ref().map(|(_, v)| v.clone()),
         bun_path: bun_info.map(|(p, _)| p.to_string_lossy().to_string()),
-        has_pm2: pm2_info.is_some(),
-        pm2_version: pm2_info.as_ref().map(|(_, v)| v.clone()),
-        pm2_path: pm2_info.map(|(p, _)| p.to_string_lossy().to_string()),
+        has_pm2,
+        pm2_version: pm2_info,
+        pm2_path: if has_pm2 {
+            Some("pm2".to_string())
+        } else {
+            None
+        },
     }
 }
 

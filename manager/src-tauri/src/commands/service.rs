@@ -35,33 +35,57 @@ pub fn append_log_arc_pub(
 
 // ─── PM2 helpers ─────────────────────────────────────────────────────────────
 
-/// Find the pm2 binary. Checks PATH first, then common bun/npm install locations.
-pub fn find_pm2() -> Option<PathBuf> {
-    // 1. PATH
-    if let Ok(o) = Command::new("pm2").arg("--version").output() {
-        if o.status.success() {
-            return Some(PathBuf::from("pm2"));
+/// Execute the globally-installed PM2 command.
+/// The operating system resolves `pm2` through the current process PATH.
+pub fn run_pm2(args: &[&str]) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    let output = Command::new("cmd")
+        .args(["/C", "pm2"])
+        .args(args)
+        .output();
+
+    #[cfg(not(target_os = "windows"))]
+    let output = Command::new("pm2")
+        .args(args)
+        .output();
+
+    let output = output.map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "PM2 is not installed or is not available in PATH. Install it using: bun add -g pm2"
+                .to_string()
+        } else {
+            format!("Failed to execute PM2: {}", error)
+        }
+    })?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if output.status.success() {
+        return Ok(stdout);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let message = format!("{}{}", stdout, stderr);
+        let lower = message.to_lowercase();
+
+        if lower.contains("is not recognized as an internal or external command")
+            || lower.contains("cannot find the file")
+        {
+            return Err(
+                "PM2 is not installed or is not available in PATH. Install it using: bun add -g pm2"
+                    .to_string(),
+            );
         }
     }
-    // 2. Explicit locations
-    let candidates = vec![
-        dirs_next::home_dir().map(|h| h.join(".bun").join("bin").join("pm2")),
-        dirs_next::home_dir().map(|h| h.join(".npm-global").join("bin").join("pm2")),
-        dirs_next::home_dir().map(|h| h.join(".yarn").join("bin").join("pm2")),
-        Some(PathBuf::from("/opt/homebrew/bin/pm2")),
-        Some(PathBuf::from("/usr/local/bin/pm2")),
-        Some(PathBuf::from("/usr/bin/pm2")),
-    ];
-    for c in candidates.into_iter().flatten() {
-        if c.exists() {
-            if let Ok(o) = Command::new(&c).arg("--version").output() {
-                if o.status.success() {
-                    return Some(c);
-                }
-            }
-        }
+
+    let message = format!("{}{}", stdout, stderr);
+    if message.trim().is_empty() {
+        Err(format!("PM2 exited with status {}", output.status))
+    } else {
+        Err(message)
     }
-    None
 }
 
 /// Build the unique PM2 process name for a service.
@@ -69,21 +93,6 @@ pub fn find_pm2() -> Option<PathBuf> {
 fn pm2_name(instance_id: &str, service: &str) -> String {
     let short = &instance_id[..instance_id.len().min(8)];
     format!("gb-{}-{}", short, service)
-}
-
-/// Run a pm2 command and capture stdout+stderr.
-fn run_pm2(pm2: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new(pm2)
-        .args(args)
-        .output()
-        .map_err(|e| format!("Failed to run pm2 {}: {}", args.join(" "), e))?;
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    if out.status.success() {
-        Ok(stdout)
-    } else {
-        Err(format!("{}{}", stdout, stderr))
-    }
 }
 
 // ─── Logged command helper (for install/upgrade) ─────────────────────────────
@@ -244,10 +253,6 @@ pub fn start_service(
 ) -> Result<String, String> {
     use crate::commands::instance::find_bun;
 
-    let pm2 = find_pm2().ok_or_else(|| {
-        "PM2 is not installed. Run: bun add -g pm2  (or npm install -g pm2)".to_string()
-    })?;
-
     let root = Path::new(&root_path);
     if !root.exists() {
         return Err("Instance directory does not exist".into());
@@ -309,7 +314,7 @@ pub fn start_service(
         .map_err(|e| format!("Failed to write PM2 ecosystem config: {}", e))?;
 
     // If already registered in PM2, restart it; otherwise start fresh
-    let jlist = run_pm2(&pm2, &["jlist"]).unwrap_or_default();
+    let jlist = run_pm2(&["jlist"]).unwrap_or_default();
     let already_exists = jlist.contains(&format!("\"name\":\"{}\"", name))
         || jlist.contains(&format!("\"name\": \"{}\"", name));
 
@@ -318,7 +323,7 @@ pub fn start_service(
             &state.logs, &log_key,
             format!("[PM2] Process '{}' already registered — restarting…", name),
         );
-        run_pm2(&pm2, &["restart", &name])
+        run_pm2(&["restart", &name])
             .map_err(|e| format!("pm2 restart failed: {}", e))?;
     } else {
         append_log_arc_pub(
@@ -326,12 +331,12 @@ pub fn start_service(
             format!("[PM2] Starting '{}' via ecosystem config…", name),
         );
         let config_str = config_path.to_string_lossy().to_string();
-        run_pm2(&pm2, &["start", &config_str])
+        run_pm2(&["start", &config_str])
             .map_err(|e| format!("pm2 start failed: {}", e))?;
     }
 
     // Save PM2 process list so it survives reboots
-    let _ = run_pm2(&pm2, &["save", "--force"]);
+    let _ = run_pm2(&["save", "--force"]);
 
     append_log_arc_pub(
         &state.logs, &log_key,
@@ -348,7 +353,6 @@ pub fn stop_service(
     instance_id: String,
     service: String,
 ) -> Result<String, String> {
-    let pm2 = find_pm2().ok_or_else(|| "PM2 not found".to_string())?;
     let name = pm2_name(&instance_id, &service);
     let log_key = make_key(&instance_id, &service);
 
@@ -357,10 +361,10 @@ pub fn stop_service(
         format!("[PM2] Stopping '{}'…", name),
     );
 
-    run_pm2(&pm2, &["stop", &name])
+    run_pm2(&["stop", &name])
         .map_err(|e| format!("pm2 stop failed: {}", e))?;
 
-    let _ = run_pm2(&pm2, &["save", "--force"]);
+    let _ = run_pm2(&["save", "--force"]);
 
     append_log_arc_pub(&state.logs, &log_key, format!("[PM2] ✓ '{}' stopped.", name));
     Ok(format!("{} stopped", service))
@@ -373,10 +377,9 @@ pub fn delete_service(
     instance_id: String,
     service: String,
 ) -> Result<String, String> {
-    let pm2 = find_pm2().ok_or_else(|| "PM2 not found".to_string())?;
     let name = pm2_name(&instance_id, &service);
-    let _ = run_pm2(&pm2, &["delete", &name]);
-    let _ = run_pm2(&pm2, &["save", "--force"]);
+    let _ = run_pm2(&["delete", &name]);
+    let _ = run_pm2(&["save", "--force"]);
     Ok(format!("{} deleted from PM2", service))
 }
 
@@ -390,8 +393,8 @@ pub fn get_service_status(
 ) -> ServiceRuntimeStatus {
     let name = pm2_name(&instance_id, &service);
 
-    if let Some(pm2) = find_pm2() {
-        if let Ok(json_str) = run_pm2(&pm2, &["jlist"]) {
+    {
+        if let Ok(json_str) = run_pm2(&["jlist"]) {
             if let Ok(list) = serde_json::from_str::<serde_json::Value>(&json_str) {
                 if let Some(arr) = list.as_array() {
                     for proc in arr {
