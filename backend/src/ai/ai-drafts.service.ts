@@ -177,7 +177,7 @@ export class AiDraftsService {
     }
 
     void this.quizQuestions(userId, activity.course_id, dto)
-      .then(async (out) => {
+      .then((out) => {
         const cur = this.questionJobs.get(activityId);
         if (cur && cur.startedAt === startedAt) {
           const readyJob: QuestionDraftJob = {
@@ -195,7 +195,7 @@ export class AiDraftsService {
           }
         }
       })
-      .catch(async (err) => {
+      .catch((err) => {
         const cur = this.questionJobs.get(activityId);
         if (cur && cur.startedAt === startedAt) {
           const failedJob: QuestionDraftJob = {
