@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::State;
 use crate::commands::instance::sanitize_workspaces;
@@ -13,6 +13,8 @@ const MAX_LOG_LINES: usize = 500;
 #[derive(Default)]
 pub struct ProcessState {
     pub logs: Arc<Mutex<HashMap<String, VecDeque<String>>>>,
+    /// Child processes started directly through Bun, keyed by instance/service.
+    pub children: Mutex<HashMap<String, Child>>,
 }
 
 pub fn make_key(instance_id: &str, service: &str) -> String {
@@ -240,10 +242,10 @@ pub fn install_service_packages(
     }
 }
 
-/// Start a service via PM2.
+/// Start a service directly through Bun (without PM2).
 ///
-/// PM2 ecosystem config written to `{root}/.pm2/{service}.config.cjs` so PM2
-/// can restart with the same settings on `pm2 resurrect`.
+/// PM2 helpers remain in this module for legacy processes and other callers,
+/// but newly started services are owned by this application's ProcessState.
 #[tauri::command]
 pub fn start_service(
     state: State<ProcessState>,
@@ -263,20 +265,13 @@ pub fn start_service(
     let (bun_cmd, _) = find_bun().ok_or_else(|| {
         "Bun is not installed or could not be found. Please install Bun first (https://bun.sh)".to_string()
     })?;
-    let bun_str = bun_cmd.to_string_lossy().to_string();
 
-    let name = pm2_name(&instance_id, &service);
     let log_key = make_key(&instance_id, &service);
 
-    // Clear old in-memory logs
-    if let Ok(mut logs) = state.logs.lock() {
-        logs.insert(log_key.clone(), VecDeque::new());
-    }
-
-    // Determine service directory and start script
+    // Determine service directory and package script.
     let (service_dir, start_script) = match service.as_str() {
-        "backend"  => (root.join("backend"),  "start:dev"),
-        "frontend" => (root.join("frontend"), "dev"),
+        "backend" => (root.join("backend"), "manage"),
+        "frontend" => (root.join("frontend"), "manage"),
         _ => return Err(format!("Unknown service: {}", service)),
     };
 
@@ -284,69 +279,93 @@ pub fn start_service(
         return Err(format!("Service directory {:?} does not exist", service_dir));
     }
 
-    // Write a PM2 ecosystem config file so the process is re-startable
-    let pm2_dir = root.join(".pm2");
-    let _ = std::fs::create_dir_all(&pm2_dir);
-    let config_path = pm2_dir.join(format!("{}.config.cjs", service));
-    let ecosystem = format!(
-        r#"module.exports = {{
-  apps: [{{
-    name: "{}",
-    interpreter: "{}",
-    interpreter_args: "run {}",
-    cwd: "{}",
-    watch: false,
-    autorestart: true,
-    max_restarts: 5,
-    env: {{
-      NODE_ENV: "{}",
-    }},
-  }}],
-}};
-"#,
-        name,
-        bun_str,
-        start_script,
-        service_dir.to_string_lossy(),
-        if service == "frontend" { "development" } else { "development" },
-    );
-    std::fs::write(&config_path, &ecosystem)
-        .map_err(|e| format!("Failed to write PM2 ecosystem config: {}", e))?;
+    // Avoid starting a duplicate if this instance/service is already running.
+    {
+        let mut children = state.children.lock().map_err(|e| e.to_string())?;
+        let already_running = match children.get_mut(&log_key) {
+            Some(child) => match child.try_wait() {
+                Ok(None) => true,
+                Ok(Some(_)) => false,
+                Err(error) => {
+                    return Err(format!("Failed to check existing {} process: {}", service, error));
+                }
+            },
+            None => false,
+        };
 
-    // If already registered in PM2, restart it; otherwise start fresh
-    let jlist = run_pm2(&["jlist"]).unwrap_or_default();
-    let already_exists = jlist.contains(&format!("\"name\":\"{}\"", name))
-        || jlist.contains(&format!("\"name\": \"{}\"", name));
+        if already_running {
+            let pid = children.get(&log_key).map(|child| child.id());
+            return Ok(format!("{} is already running via Bun (PID: {}).", service, pid.unwrap_or_default()));
+        }
 
-    if already_exists {
-        append_log_arc_pub(
-            &state.logs, &log_key,
-            format!("[PM2] Process '{}' already registered — restarting…", name),
-        );
-        run_pm2(&["restart", &name])
-            .map_err(|e| format!("pm2 restart failed: {}", e))?;
-    } else {
-        append_log_arc_pub(
-            &state.logs, &log_key,
-            format!("[PM2] Starting '{}' via ecosystem config…", name),
-        );
-        let config_str = config_path.to_string_lossy().to_string();
-        run_pm2(&["start", &config_str])
-            .map_err(|e| format!("pm2 start failed: {}", e))?;
+        // Remove a previous child that has already exited.
+        children.remove(&log_key);
     }
 
-    // Save PM2 process list so it survives reboots
-    let _ = run_pm2(&["save", "--force"]);
+    // Clear old in-memory logs before starting the new process.
+    if let Ok(mut logs) = state.logs.lock() {
+        logs.insert(log_key.clone(), VecDeque::new());
+    }
 
     append_log_arc_pub(
-        &state.logs, &log_key,
-        format!("[PM2] ✓ '{}' is now managed by PM2.", name),
+        &state.logs,
+        &log_key,
+        format!("[Bun] Starting '{}' with `bun run {}` in {:?}...", service, start_script, service_dir),
     );
 
-    Ok(format!("{} started via PM2 (name: {})", service, name))
+    let mut command = Command::new(&bun_cmd);
+    command
+        .args(["start", start_script])
+        .current_dir(&service_dir)
+        .env("NODE_ENV", "production")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Failed to start {} with Bun: {}", service, error))?;
+
+    let pid = child.id();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    // Stream stdout into the existing log buffer.
+    let logs_out = Arc::clone(&state.logs);
+    let key_out = log_key.clone();
+    std::thread::spawn(move || {
+        if let Some(stdout) = stdout {
+            for line in BufReader::new(stdout).lines().flatten() {
+                append_log_arc_pub(&logs_out, &key_out, line);
+            }
+        }
+    });
+
+    // Stream stderr into the same log buffer, with an error prefix.
+    let logs_err = Arc::clone(&state.logs);
+    let key_err = log_key.clone();
+    std::thread::spawn(move || {
+        if let Some(stderr) = stderr {
+            for line in BufReader::new(stderr).lines().flatten() {
+                append_log_arc_pub(&logs_err, &key_err, format!("[err] {}", line));
+            }
+        }
+    });
+
+    state.children.lock()
+        .map_err(|error| error.to_string())?
+        .insert(log_key.clone(), child);
+
+    append_log_arc_pub(
+        &state.logs,
+        &log_key,
+        format!("[Bun] ✓ '{}' started successfully (PID: {}).", service, pid),
+    );
+
+    Ok(format!("{} started via Bun (PID: {})", service, pid))
 }
 
-/// Stop a PM2-managed service (leaves it in PM2's list as `stopped`).
+/// Stop a Bun-managed service. If it was started by an older version through
+/// PM2, fall back to PM2 so existing processes remain manageable.
 #[tauri::command]
 pub fn stop_service(
     state: State<ProcessState>,
@@ -356,67 +375,114 @@ pub fn stop_service(
     let name = pm2_name(&instance_id, &service);
     let log_key = make_key(&instance_id, &service);
 
-    append_log_arc_pub(
-        &state.logs, &log_key,
-        format!("[PM2] Stopping '{}'…", name),
-    );
+    let child = state.children.lock()
+        .map_err(|error| error.to_string())?
+        .remove(&log_key);
 
-    run_pm2(&["stop", &name])
-        .map_err(|e| format!("pm2 stop failed: {}", e))?;
+    if let Some(mut child) = child {
+        append_log_arc_pub(&state.logs, &log_key, format!("[Bun] Stopping '{}'...", service));
 
+        match child.try_wait().map_err(|e| format!("Failed to check {} process: {}", service, e))? {
+            Some(_) => {}
+            None => {
+                child.kill().map_err(|e| format!("Failed to stop {}: {}", service, e))?;
+                let _ = child.wait();
+            }
+        }
+
+        append_log_arc_pub(&state.logs, &log_key, format!("[Bun] ✓ '{}' stopped.", service));
+        return Ok(format!("{} stopped", service));
+    }
+
+    // Backward compatibility: stop a process created by the previous PM2 flow.
+    run_pm2(&["stop", &name]).map_err(|e| format!("Failed to stop legacy PM2 process: {}", e))?;
     let _ = run_pm2(&["save", "--force"]);
-
-    append_log_arc_pub(&state.logs, &log_key, format!("[PM2] ✓ '{}' stopped.", name));
-    Ok(format!("{} stopped", service))
+    Ok(format!("{} stopped (legacy PM2 process)", service))
 }
 
-/// Delete a PM2 process entirely (called when removing an instance).
+/// Delete a service process. Also remove a matching legacy PM2 process if one exists.
 #[tauri::command]
 pub fn delete_service(
-    _state: State<ProcessState>,
+    state: State<ProcessState>,
     instance_id: String,
     service: String,
 ) -> Result<String, String> {
     let name = pm2_name(&instance_id, &service);
+    let log_key = make_key(&instance_id, &service);
+
+    if let Some(mut child) = state.children.lock()
+        .map_err(|error| error.to_string())?
+        .remove(&log_key)
+    {
+        if matches!(child.try_wait(), Ok(None)) {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    // Best-effort cleanup for processes registered by the older PM2 implementation.
     let _ = run_pm2(&["delete", &name]);
     let _ = run_pm2(&["save", "--force"]);
-    Ok(format!("{} deleted from PM2", service))
+
+    Ok(format!("{} process deleted", service))
 }
 
-/// Query PM2 for the status of a service.
-/// Parses the JSON output of `pm2 jlist` to find the matching process.
+/// Get status from the in-memory Bun child registry first, then fall back to
+/// PM2 for processes started by older versions of the application.
 #[tauri::command]
 pub fn get_service_status(
-    _state: State<ProcessState>,
+    state: State<ProcessState>,
     instance_id: String,
     service: String,
 ) -> ServiceRuntimeStatus {
     let name = pm2_name(&instance_id, &service);
+    let log_key = make_key(&instance_id, &service);
 
-    {
-        if let Ok(json_str) = run_pm2(&["jlist"]) {
-            if let Ok(list) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                if let Some(arr) = list.as_array() {
-                    for proc in arr {
-                        let proc_name = proc["name"].as_str().unwrap_or("");
-                        if proc_name == name {
-                            let pm2_status = proc["pm2_env"]["status"]
-                                .as_str()
-                                .unwrap_or("stopped");
-                            let running = pm2_status == "online";
-                            let pid = if running {
-                                proc["pid"].as_u64().map(|p| p as u32)
-                            } else {
-                                None
-                            };
-                            return ServiceRuntimeStatus {
-                                service,
-                                running,
-                                pid,
-                                pm2_name: Some(name),
-                                pm2_status: Some(pm2_status.to_string()),
-                            };
-                        }
+    if let Ok(mut children) = state.children.lock() {
+        let mut exited = false;
+        if let Some(child) = children.get_mut(&log_key) {
+            match child.try_wait() {
+                Ok(None) => {
+                    return ServiceRuntimeStatus {
+                        service,
+                        running: true,
+                        pid: Some(child.id()),
+                        pm2_name: Some(name),
+                        pm2_status: Some("online".to_string()),
+                    };
+                }
+                Ok(Some(_)) => exited = true,
+                Err(_) => {}
+            }
+        }
+        if exited {
+            children.remove(&log_key);
+        }
+    }
+
+    // Legacy PM2 status lookup.
+    if let Ok(json_str) = run_pm2(&["jlist"]) {
+        if let Ok(list) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if let Some(arr) = list.as_array() {
+                for proc in arr {
+                    let proc_name = proc["name"].as_str().unwrap_or("");
+                    if proc_name == name {
+                        let pm2_status = proc["pm2_env"]["status"]
+                            .as_str()
+                            .unwrap_or("stopped");
+                        let running = pm2_status == "online";
+                        let pid = if running {
+                            proc["pid"].as_u64().map(|p| p as u32)
+                        } else {
+                            None
+                        };
+                        return ServiceRuntimeStatus {
+                            service,
+                            running,
+                            pid,
+                            pm2_name: Some(name),
+                            pm2_status: Some(pm2_status.to_string()),
+                        };
                     }
                 }
             }
@@ -443,19 +509,22 @@ pub fn get_service_logs(
 ) -> Vec<String> {
     let limit = max_lines.unwrap_or(MAX_LOG_LINES);
 
-    // install / upgrade logs come from the in-memory buffer
-    if service == "install" || service == "upgrade" {
-        let key = make_key(&instance_id, &service);
-        if let Ok(logs) = state.logs.lock() {
-            if let Some(queue) = logs.get(&key) {
+    // Install, upgrade, and newly Bun-managed service logs come from memory.
+    let key = make_key(&instance_id, &service);
+    if let Ok(logs) = state.logs.lock() {
+        if let Some(queue) = logs.get(&key) {
+            if !queue.is_empty() || service == "install" || service == "upgrade" {
                 let start = if queue.len() > limit { queue.len() - limit } else { 0 };
                 return queue.iter().skip(start).cloned().collect();
             }
         }
+    }
+
+    if service == "install" || service == "upgrade" {
         return Vec::new();
     }
 
-    // For backend/frontend, read from PM2 log files
+    // Legacy PM2 log-file fallback for services started by older versions.
     let name = pm2_name(&instance_id, &service);
 
     // PM2 stores logs at ~/.pm2/logs/{name}-out.log and {name}-error.log
@@ -504,17 +573,6 @@ pub fn get_service_logs(
         result.extend(err_lines);
         result
     };
-
-    // Fall back to in-memory buffer (populated on start_service)
-    if out_lines.is_empty() {
-        let key = make_key(&instance_id, &service);
-        if let Ok(logs) = state.logs.lock() {
-            if let Some(queue) = logs.get(&key) {
-                let start = if queue.len() > limit { queue.len() - limit } else { 0 };
-                return queue.iter().skip(start).cloned().collect();
-            }
-        }
-    }
 
     out_lines
 }

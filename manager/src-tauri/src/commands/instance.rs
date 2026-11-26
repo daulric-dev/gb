@@ -69,6 +69,7 @@ pub fn check_system_environment() -> SystemEnvironment {
         .filter(|version| !version.trim().is_empty());
 
     let has_pm2 = pm2_info.is_some();
+    println!("System environment check: has_bun={}, bun_version={:?}, has_pm2={}, pm2_version={:?}", bun_info.is_some(), bun_info.as_ref().map(|(_, v)| v.clone()), has_pm2, pm2_info);
 
     SystemEnvironment {
         has_bun: bun_info.is_some(),
@@ -90,6 +91,11 @@ pub fn scan_instance_directory(path: String) -> InstanceScanResult {
     let bun_info = find_bun();
     let has_bun = bun_info.is_some();
     let bun_version = bun_info.map(|(_, v)| v);
+    
+    let backend_path = root.join("backend");
+    let frontend_path = root.join("frontend");
+
+    let has_env = backend_path.join(".env").exists() || frontend_path.join(".env").exists();
 
     if !root.exists() || !root.is_dir() {
         return InstanceScanResult {
@@ -100,6 +106,7 @@ pub fn scan_instance_directory(path: String) -> InstanceScanResult {
             has_instance_file: false,
             has_node_modules: false,
             has_bun,
+            has_env,
             bun_version,
             existing_config: None,
             error: Some("Directory does not exist".into()),
@@ -116,6 +123,12 @@ pub fn scan_instance_directory(path: String) -> InstanceScanResult {
     let has_frontend = frontend_path.exists() && frontend_path.is_dir();
     let has_instance_file = instance_json_path.exists();
     let has_node_modules = node_modules_path.exists() && node_modules_path.is_dir();
+    let has_env = backend_path.join(".env").exists() || frontend_path.join(".env").exists();
+
+    if !has_env {
+        let _ = fs::write(backend_path.join(".env"), "PORT=3001\nFRONTEND_URL=http://localhost:3000\nAPI_URL=http://localhost:3001\nDATABASE_URL=file:./prisma/dev.db\nNODE_ENV=development");
+        let _ = fs::write(frontend_path.join(".env"), "NEXT_PUBLIC_API_URL=http://localhost:3001\nNEXT_PUBLIC_STORAGE_URL=http://127.0.0.1:8333\nNEXT_PUBLIC_IMAGES_URL=https://images.example.com");
+    }
 
     let mut existing_config: Option<InstanceConfig> = None;
     if has_instance_file {
@@ -165,6 +178,7 @@ pub fn scan_instance_directory(path: String) -> InstanceScanResult {
         has_frontend,
         has_instance_file,
         has_node_modules,
+        has_env,
         has_bun,
         bun_version,
         existing_config,
@@ -180,6 +194,7 @@ pub async fn check_instance_health(root_path: String, url: String) -> InstanceHe
     let has_frontend = root_exists && root.join("frontend").is_dir();
     let node_modules_path = root.join("node_modules");
     let has_node_modules = root_exists && node_modules_path.is_dir();
+    let has_env = root_exists && (root.join("backend").join(".env").exists() || root.join("frontend").join(".env").exists());
 
     let bun_info = find_bun();
     let has_bun = bun_info.is_some();
@@ -192,6 +207,7 @@ pub async fn check_instance_health(root_path: String, url: String) -> InstanceHe
         has_backend,
         has_frontend,
         has_node_modules,
+        has_env,
         has_bun,
         bun_version,
         is_online,

@@ -333,21 +333,58 @@ pub fn read_service_envs(instance_root: String) -> Result<Vec<ServiceEnv>, Strin
     Ok(result)
 }
 
+
 #[tauri::command]
 pub fn save_service_envs(instance_root: String, services: Vec<ServiceEnv>) -> Result<(), String> {
     let root = Path::new(&instance_root);
-    for svc in &services {
-        let path = if svc.service == "backend" {
-            root.join("backend").join(".env")
-        } else {
-            root.join("frontend").join(".env.local")
-        };
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        let content = serialize_env_vars(&svc.variables);
-        fs::write(&path, content)
-            .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+
+    if !root.exists() {
+        return Err(format!(
+            "Instance directory does not exist: {}",
+            root.display()
+        ));
     }
+
+    for svc in &services {
+        let service_dir = match svc.service.as_str() {
+            "backend" => root.join("backend"),
+            "frontend" => root.join("frontend"),
+            _ => {
+                return Err(format!(
+                    "Unknown service: {}",
+                    svc.service
+                ));
+            }
+        };
+
+        // Create the service directory if it doesn't exist.
+        fs::create_dir_all(&service_dir).map_err(|e| {
+            format!(
+                "Failed to create {} directory: {}",
+                service_dir.display(),
+                e
+            )
+        })?;
+
+        // Always create .env directly inside the service directory.
+        let env_path = service_dir.join(".env");
+
+        let content = serialize_env_vars(&svc.variables);
+
+        fs::write(&env_path, content).map_err(|e| {
+            format!(
+                "Failed to create {}: {}",
+                env_path.display(),
+                e
+            )
+        })?;
+
+        println!(
+            "[Environment] Saved {} variables to {}",
+            svc.variables.len(),
+            env_path.display()
+        );
+    }
+
     Ok(())
 }
