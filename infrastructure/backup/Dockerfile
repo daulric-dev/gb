@@ -17,7 +17,7 @@
 #
 # The client major version must be >= the server's (pg_dump refuses a newer
 # server). Bump the base image together with the database.
-FROM postgres:18.6-alpine
+FROM postgres:19.0-alpine
 
 # Pinned tool versions. Checksums are SHA-256 of the release assets; the
 # supercronic SHA-1s published in its release notes were checked to match, and
