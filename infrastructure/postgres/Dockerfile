@@ -38,7 +38,7 @@ RUN set -eux; \
       -ldflags "-s -w -linkmode external -extldflags -static -X github.com/wal-g/wal-g/cmd/pg.walgVersion=${WALG_VERSION}" .; \
     /out/wal-g --version
 
-FROM postgres:18.6-alpine
+FROM postgres:19.0-alpine
 
 ARG SUPERCRONIC_VERSION=v0.2.51
 ARG SUPERCRONIC_SHA256_AMD64=cc232108374e8e2b537045f2d5eaa1229f619db314c3ba6a14d38b35dc0aa123
