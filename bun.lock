@@ -14,7 +14,7 @@
       "name": "backend",
       "version": "0.0.1",
       "dependencies": {
-        "@anthropic-ai/sdk": "1.4.0",
+        "@anthropic-ai/sdk": "1.13.0",
         "@aws-sdk/client-s3": "3.1165.0",
         "@aws-sdk/s3-request-presigner": "3.1154.0",
         "@fastify/aws-lambda": "^6.4.2",
@@ -237,7 +237,7 @@
 
     "@angular-devkit/schematics-cli": ["@angular-devkit/schematics-cli@22.1.8", "", { "dependencies": { "@angular-devkit/core": "22.1.8", "@angular-devkit/schematics": "22.1.8", "@inquirer/prompts": "8.5.2" }, "bin": { "schematics": "bin/schematics.js" } }, "sha512-SsGG8ompVzprmYE9sHi2L7DYZ+i1sD+YDfun6Rg2vkTCusejtD4SSGVxwuR6++dT22ZpN16OqUTmii/0bhE4xA=="],
 
-    "@anthropic-ai/sdk": ["@anthropic-ai/sdk@1.4.0", "", { "dependencies": { "@opentelemetry/api": "^1.4.1", "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-tyuibnhQL57kLOx5oomY4Ld7jOVOPNC5v3IiyRtR3l+Friv66tI4VbuZYF2NMel/T0WMuQMBFOMKDBUbUh8gPA=="],
+    "@anthropic-ai/sdk": ["@anthropic-ai/sdk@1.13.0", "", { "dependencies": { "@opentelemetry/api": "^1.4.1", "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-F4Qu3zqRINxTV5xruOvw1gXhEsYH4lOgxffxZx4IworMefc395T458pl5Uj3TZiAlO3+gvhYoHSHU7qDsrchNA=="],
 
     "@ast-grep/napi": ["@ast-grep/napi@0.45.3", "", { "optionalDependencies": { "@ast-grep/napi-darwin-arm64": "0.45.3", "@ast-grep/napi-darwin-x64": "0.45.3", "@ast-grep/napi-linux-arm64-gnu": "0.45.3", "@ast-grep/napi-linux-arm64-musl": "0.45.3", "@ast-grep/napi-linux-x64-gnu": "0.45.3", "@ast-grep/napi-linux-x64-musl": "0.45.3", "@ast-grep/napi-win32-arm64-msvc": "0.45.3", "@ast-grep/napi-win32-ia32-msvc": "0.45.3", "@ast-grep/napi-win32-x64-msvc": "0.45.3" } }, "sha512-bjJsUt0g3UCwbn9bjv7MnoR15rszSm79yPCXn4DWWK0NuYUUqBU/srtNMR4WnpfR7TnfBRdYFoqSNx0pGCNWJg=="],
 
