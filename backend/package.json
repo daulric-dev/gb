@@ -51,7 +51,7 @@
     "@pdfme/pdf-lib": "6.2.8",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
-    "@react-pdf/renderer": "^4.9.0",
+    "@react-pdf/renderer": "^4.9.1",
     "archiver": "^8.0.0",
     "bullmq": "^6.3.14",
     "class-transformer": "^0.5.1",
