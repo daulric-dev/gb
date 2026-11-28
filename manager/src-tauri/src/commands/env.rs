@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use crate::models::{EnvVariable, ServiceEnv};
 
 const SECRET_KEYWORDS: &[&str] = &[
@@ -41,6 +41,10 @@ fn parse_env_lines(content: &str) -> Vec<EnvVariable> {
                             val = val[1..val.len() - 1].to_string();
                         }
                     }
+                    // Sanitize template placeholder tokens like <base64 key> or <account-id> to empty
+                    if val.contains('<') && val.contains('>') {
+                        val = String::new();
+                    }
                     vars.push(EnvVariable {
                         is_secret: is_secret_key(key),
                         comment: pending_comment.take(),
@@ -64,6 +68,10 @@ fn parse_env_lines(content: &str) -> Vec<EnvVariable> {
                     val = val[1..val.len() - 1].to_string();
                 }
             }
+            // Sanitize unreplaced placeholder tokens like <base64 key> to prevent runtime crash
+            if val.contains('<') && val.contains('>') {
+                val = String::new();
+            }
             if let Some(pos) = vars.iter().position(|existing: &EnvVariable| existing.key == key) {
                 vars[pos] = EnvVariable {
                     key,
@@ -86,9 +94,17 @@ fn parse_env_lines(content: &str) -> Vec<EnvVariable> {
 
 fn merge_env_variables(template_vars: Vec<EnvVariable>, actual_vars: Vec<EnvVariable>) -> Vec<EnvVariable> {
     let mut merged = template_vars;
-    for actual in actual_vars {
+    for mut actual in actual_vars {
+        if actual.value.contains('<') && actual.value.contains('>') {
+            actual.value = String::new();
+        }
+
         if let Some(pos) = merged.iter().position(|m| m.key == actual.key) {
-            merged[pos].value = actual.value;
+            // If the actual file had an empty value, but the template provided a default value,
+            // preserve the template's default value so variables from .env.example show their defaults!
+            if !actual.value.is_empty() || merged[pos].value.is_empty() {
+                merged[pos].value = actual.value;
+            }
             if actual.comment.is_some() {
                 merged[pos].comment = actual.comment;
             }
@@ -127,13 +143,13 @@ fn default_backend_template() -> Vec<EnvVariable> {
         },
         EnvVariable {
             key: "NODE_ENV".into(),
-            value: "development".into(),
+            value: "production".into(),
             is_secret: false,
-            comment: Some("development or production".into()),
+            comment: Some("production or development".into()),
         },
         EnvVariable {
             key: "DATABASE_URL".into(),
-            value: "file:./prisma/dev.db".into(),
+            value: "file:./prisma/gradebook.db".into(),
             is_secret: true,
             comment: Some("Database connection string (SQLite file or PostgreSQL URL)".into()),
         },
@@ -288,7 +304,38 @@ pub fn read_service_envs(instance_root: String) -> Result<Vec<ServiceEnv>, Strin
         Vec::new()
     };
 
-    let backend_vars = merge_env_variables(backend_template, backend_actual);
+    let mut backend_vars = merge_env_variables(backend_template, backend_actual.clone());
+
+    // Strictly enforce NODE_ENV=production for Gradebook Manager
+    let mut has_be_node_env = false;
+    let required_secrets = ["AUTH_SECRET", "CHAT_ENCRYPTION_KEY", "STUDENT_CLAIM_CODE_PEPPER", "DATA_ENCRYPTION_KEY"];
+
+    for v in &mut backend_vars {
+        if v.key == "NODE_ENV" {
+            v.value = "production".into();
+            has_be_node_env = true;
+        }
+        if required_secrets.contains(&v.key.as_str()) && (v.value.trim().is_empty() || (v.value.starts_with('<') && v.value.ends_with('>'))) {
+            v.value = crate::system::generate_secret_32();
+        }
+    }
+    if !has_be_node_env {
+        backend_vars.push(EnvVariable {
+            key: "NODE_ENV".into(),
+            value: "production".into(),
+            is_secret: false,
+            comment: Some("Runtime environment".into()),
+        });
+    }
+
+    // Automatically persist to backend .env if file is missing or has fewer variables
+    if !chosen_backend_actual.exists() || backend_actual.len() < backend_vars.len() {
+        if let Some(parent) = chosen_backend_actual.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let serialized = serialize_env_vars(&backend_vars);
+        let _ = fs::write(&chosen_backend_actual, serialized);
+    }
 
     result.push(ServiceEnv {
         service: "backend".into(),
@@ -321,7 +368,39 @@ pub fn read_service_envs(instance_root: String) -> Result<Vec<ServiceEnv>, Strin
         Vec::new()
     };
 
-    let frontend_vars = merge_env_variables(frontend_template, frontend_actual);
+    let mut frontend_vars = merge_env_variables(frontend_template, frontend_actual.clone());
+
+    // Strictly enforce NODE_ENV=production for Gradebook Manager
+    let mut has_fe_node_env = false;
+    for v in &mut frontend_vars {
+        if v.key == "NODE_ENV" {
+            v.value = "production".into();
+            has_fe_node_env = true;
+        }
+    }
+    if !has_fe_node_env {
+        frontend_vars.push(EnvVariable {
+            key: "NODE_ENV".into(),
+            value: "production".into(),
+            is_secret: false,
+            comment: Some("Runtime environment".into()),
+        });
+    }
+
+    // Automatically persist to frontend .env if file is missing or has fewer variables
+    if !chosen_frontend_actual.exists() || frontend_actual.len() < frontend_vars.len() {
+        if let Some(parent) = chosen_frontend_actual.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let serialized = serialize_env_vars(&frontend_vars);
+        let _ = fs::write(&chosen_frontend_actual, &serialized);
+
+        // Also ensure frontend/.env exists if .env.local was used
+        let fallback_env = root.join("frontend").join(".env");
+        if !fallback_env.exists() {
+            let _ = fs::write(fallback_env, &serialized);
+        }
+    }
 
     result.push(ServiceEnv {
         service: "frontend".into(),
@@ -332,7 +411,6 @@ pub fn read_service_envs(instance_root: String) -> Result<Vec<ServiceEnv>, Strin
 
     Ok(result)
 }
-
 
 #[tauri::command]
 pub fn save_service_envs(instance_root: String, services: Vec<ServiceEnv>) -> Result<(), String> {
@@ -345,46 +423,68 @@ pub fn save_service_envs(instance_root: String, services: Vec<ServiceEnv>) -> Re
         ));
     }
 
-    for svc in &services {
-        let service_dir = match svc.service.as_str() {
-            "backend" => root.join("backend"),
-            "frontend" => root.join("frontend"),
-            _ => {
-                return Err(format!(
-                    "Unknown service: {}",
-                    svc.service
-                ));
+    let required_secrets = ["AUTH_SECRET", "CHAT_ENCRYPTION_KEY", "STUDENT_CLAIM_CODE_PEPPER", "DATA_ENCRYPTION_KEY"];
+
+    for mut svc in services {
+        if svc.service == "backend" {
+            for v in &mut svc.variables {
+                if required_secrets.contains(&v.key.as_str()) && (v.value.trim().is_empty() || (v.value.starts_with('<') && v.value.ends_with('>'))) {
+                    v.value = crate::system::generate_secret_32();
+                }
+            }
+        }
+        let target_path = if !svc.path.is_empty() && Path::new(&svc.path).is_absolute() {
+            PathBuf::from(&svc.path)
+        } else {
+            match svc.service.as_str() {
+                "backend" => root.join("backend").join(".env"),
+                "frontend" => root.join("frontend").join(".env"),
+                _ => {
+                    return Err(format!(
+                        "Unknown service: {}",
+                        svc.service
+                    ));
+                }
             }
         };
 
-        // Create the service directory if it doesn't exist.
-        fs::create_dir_all(&service_dir).map_err(|e| {
-            format!(
-                "Failed to create {} directory: {}",
-                service_dir.display(),
-                e
-            )
-        })?;
-
-        // Always create .env directly inside the service directory.
-        let env_path = service_dir.join(".env");
+        if let Some(parent) = target_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
 
         let content = serialize_env_vars(&svc.variables);
 
-        fs::write(&env_path, content).map_err(|e| {
+        fs::write(&target_path, &content).map_err(|e| {
             format!(
-                "Failed to create {}: {}",
-                env_path.display(),
+                "Failed to save {}: {}",
+                target_path.display(),
                 e
             )
         })?;
+
+        // If frontend, mirror to .env.local if present so there is no desync
+        if svc.service == "frontend" {
+            let local_env = root.join("frontend").join(".env.local");
+            if local_env.exists() && local_env != target_path {
+                let _ = fs::write(&local_env, &content);
+            }
+            let std_env = root.join("frontend").join(".env");
+            if std_env.exists() && std_env != target_path {
+                let _ = fs::write(&std_env, &content);
+            }
+        }
 
         println!(
             "[Environment] Saved {} variables to {}",
             svc.variables.len(),
-            env_path.display()
+            target_path.display()
         );
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn read_file_content(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| format!("Failed to read file {}: {}", path, e))
 }

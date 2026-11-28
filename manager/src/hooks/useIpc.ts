@@ -44,11 +44,18 @@ export const installServicePackages = (
   service: "backend" | "frontend" | "all"
 ): Promise<string> => invoke("install_service_packages", { instanceId, rootPath, service });
 
+export const buildService = (
+  instanceId: string,
+  rootPath: string,
+  service: "backend" | "frontend" | "all"
+): Promise<string> => invoke("build_service", { instanceId, rootPath, service });
+
 export const startService = (
   instanceId: string,
   rootPath: string,
-  service: "backend" | "frontend"
-): Promise<string> => invoke("start_service", { instanceId, rootPath, service });
+  service: "backend" | "frontend",
+  buildFirst?: boolean
+): Promise<string> => invoke("start_service", { instanceId, rootPath, service, buildFirst });
 
 export const stopService = (
   instanceId: string,
@@ -62,9 +69,10 @@ export const deleteService = (
 
 export const getServiceStatus = (
   instanceId: string,
-  service: "backend" | "frontend"
+  service: "backend" | "frontend",
+  rootPath?: string
 ): Promise<ServiceRuntimeStatus> =>
-  invoke("get_service_status", { instanceId, service });
+  invoke("get_service_status", { instanceId, service, rootPath });
 
 export const getServiceLogs = (
   instanceId: string,
@@ -73,9 +81,18 @@ export const getServiceLogs = (
 ): Promise<string[]> =>
   invoke("get_service_logs", { instanceId, service, maxLines });
 
+export const clearServiceLogs = (
+  instanceId: string,
+  service: "backend" | "frontend" | "install" | "upgrade" | string
+): Promise<void> =>
+  invoke("clear_service_logs", { instanceId, service });
+
 // ── Env commands ───────────────────────────────────────────────────────────
 export const readServiceEnvs = (instanceRoot: string): Promise<ServiceEnv[]> =>
   invoke("read_service_envs", { instanceRoot });
+
+export const readFileContent = (path: string): Promise<string> =>
+  invoke("read_file_content", { path });
 
 export const saveServiceEnvs = (instanceRoot: string, services: ServiceEnv[]): Promise<void> =>
   invoke("save_service_envs", { instanceRoot, services });

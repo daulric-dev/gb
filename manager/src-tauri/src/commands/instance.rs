@@ -12,12 +12,19 @@ pub fn get_registry_path() -> PathBuf {
 }
 
 pub fn find_bun() -> Option<(PathBuf, String)> {
+    crate::system::ensure_system_path();
+    let enriched_path = crate::system::get_enriched_path();
+
     // 1. Try running "bun --version" directly (works if PATH is inherited)
-    if let Ok(output) = Command::new("bun").arg("--version").output() {
+    let mut direct_cmd = Command::new("bun");
+    direct_cmd.arg("--version").env("PATH", &enriched_path);
+    if let Ok(output) = direct_cmd.output() {
         if output.status.success() {
             let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !ver.is_empty() {
-                let path = if let Ok(which_out) = Command::new("which").arg("bun").output() {
+                let mut which_cmd = Command::new("which");
+                which_cmd.arg("bun").env("PATH", &enriched_path);
+                let path = if let Ok(which_out) = which_cmd.output() {
                     let p = String::from_utf8_lossy(&which_out.stdout).trim().to_string();
                     if !p.is_empty() { PathBuf::from(p) } else { PathBuf::from("bun") }
                 } else {
@@ -43,7 +50,9 @@ pub fn find_bun() -> Option<(PathBuf, String)> {
 
     for candidate in candidates {
         if candidate.exists() {
-            if let Ok(output) = Command::new(&candidate).arg("--version").output() {
+            let mut cmd = Command::new(&candidate);
+            cmd.arg("--version").env("PATH", &enriched_path);
+            if let Ok(output) = cmd.output() {
                 if output.status.success() {
                     let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if !ver.is_empty() {
@@ -59,17 +68,22 @@ pub fn find_bun() -> Option<(PathBuf, String)> {
 
 #[tauri::command]
 pub fn check_system_environment() -> SystemEnvironment {
-    use crate::commands::service::run_pm2;
+    crate::system::ensure_system_path();
+    use crate::commands::service::{find_pm2, run_pm2};
 
     let bun_info = find_bun();
+    let pm2_binary = find_pm2();
 
     // Check PM2 by executing it directly
     let pm2_info = run_pm2(&["--version"])
         .ok()
-        .filter(|version| !version.trim().is_empty());
+        .map(|v| v.trim().to_string())
+        .filter(|version| !version.is_empty());
 
-    let has_pm2 = pm2_info.is_some();
-    println!("System environment check: has_bun={}, bun_version={:?}, has_pm2={}, pm2_version={:?}", bun_info.is_some(), bun_info.as_ref().map(|(_, v)| v.clone()), has_pm2, pm2_info);
+    let has_pm2 = pm2_info.is_some() || pm2_binary.is_some();
+    let pm2_path_str = pm2_binary.map(|p| p.to_string_lossy().to_string()).or_else(|| if has_pm2 { Some("pm2".to_string()) } else { None });
+
+    println!("System environment check: has_bun={}, bun_version={:?}, has_pm2={}, pm2_version={:?}, pm2_path={:?}", bun_info.is_some(), bun_info.as_ref().map(|(_, v)| v.clone()), has_pm2, pm2_info, pm2_path_str);
 
     SystemEnvironment {
         has_bun: bun_info.is_some(),
@@ -77,11 +91,7 @@ pub fn check_system_environment() -> SystemEnvironment {
         bun_path: bun_info.map(|(p, _)| p.to_string_lossy().to_string()),
         has_pm2,
         pm2_version: pm2_info,
-        pm2_path: if has_pm2 {
-            Some("pm2".to_string())
-        } else {
-            None
-        },
+        pm2_path: pm2_path_str,
     }
 }
 
@@ -126,8 +136,8 @@ pub fn scan_instance_directory(path: String) -> InstanceScanResult {
     let has_env = backend_path.join(".env").exists() || frontend_path.join(".env").exists();
 
     if !has_env {
-        let _ = fs::write(backend_path.join(".env"), "PORT=3001\nFRONTEND_URL=http://localhost:3000\nAPI_URL=http://localhost:3001\nDATABASE_URL=file:./prisma/dev.db\nNODE_ENV=development");
-        let _ = fs::write(frontend_path.join(".env"), "NEXT_PUBLIC_API_URL=http://localhost:3001\nNEXT_PUBLIC_STORAGE_URL=http://127.0.0.1:8333\nNEXT_PUBLIC_IMAGES_URL=https://images.example.com");
+        let _ = fs::write(backend_path.join(".env"), "PORT=3001\nFRONTEND_URL=http://localhost:3000\nAPI_URL=http://localhost:3001\nDATABASE_URL=file:./prisma/gradebook.db\nNODE_ENV=production");
+        let _ = fs::write(frontend_path.join(".env"), "NEXT_PUBLIC_API_URL=http://localhost:3001\nNEXT_PUBLIC_STORAGE_URL=http://127.0.0.1:8333\nNEXT_PUBLIC_IMAGES_URL=https://images.example.com\nNODE_ENV=production");
     }
 
     let mut existing_config: Option<InstanceConfig> = None;

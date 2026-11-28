@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useInstances, compareSemver } from "@/hooks/useInstances";
+import { useInstances, compareSemver, type UpgradeProgressInfo } from "@/hooks/useInstances";
 import { Card } from "@/components/m3/Card";
 import { Button } from "@/components/m3/Button";
 import { Chip } from "@/components/m3/Chip";
@@ -26,16 +26,32 @@ import {
   ArrowUpCircle,
   Sparkles,
   Search,
+  ArrowDown,
+  Hammer,
 } from "lucide-react";
 import type { InstanceConfig, InstanceScanResult } from "@/types/instance";
 import type { GitHubRelease } from "@/types/releases";
 
 function StatusDot({ online }: { online?: boolean | null }) {
   if (online === null || online === undefined)
-    return <Loader2 size={14} className="animate-spin text-[var(--md-sys-color-outline)]" />;
+    return (
+      <span title="Checking status...">
+        <Loader2 size={13} className="animate-spin text-[var(--md-sys-color-outline)]" />
+      </span>
+    );
   if (online)
-    return <CheckCircle2 size={14} className="text-[var(--md-sys-color-primary)]" />;
-  return <XCircle size={14} className="text-[var(--md-sys-color-error)]" />;
+    return (
+      <span className="relative flex h-2.5 w-2.5" title="Online (Services Running)">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+      </span>
+    );
+  return (
+    <span
+      className="inline-flex rounded-full h-2 w-2 bg-gray-400 dark:bg-gray-500 opacity-60"
+      title="Offline (Services Stopped)"
+    />
+  );
 }
 
 interface LiveTerminalModalProps {
@@ -47,6 +63,7 @@ interface LiveTerminalModalProps {
   isRunning?: boolean;
   onClose: () => void;
   fetchLogs: (id: string, s: string) => Promise<string[]>;
+  onClear?: (id: string, s: string) => Promise<void>;
 }
 
 function LiveTerminalModal({
@@ -58,22 +75,57 @@ function LiveTerminalModal({
   isRunning,
   onClose,
   fetchLogs,
+  onClear,
 }: LiveTerminalModalProps) {
   const [logs, setLogs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
       const lines = await fetchLogs(instanceId, service);
-      setLogs(lines);
+      setLogs((prev) => {
+        if (
+          prev.length === lines.length &&
+          (prev.length === 0 || prev[prev.length - 1] === lines[lines.length - 1])
+        ) {
+          return prev;
+        }
+        return lines;
+      });
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
   }, [instanceId, service, fetchLogs]);
+
+  const handleScroll = () => {
+    if (!logContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = logContainerRef.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 35;
+    if (!isAtBottom && autoScroll) {
+      setAutoScroll(false);
+    } else if (isAtBottom && !autoScroll) {
+      setAutoScroll(true);
+    }
+  };
+
+  const handleClear = async () => {
+    setClearing(true);
+    try {
+      if (onClear) {
+        await onClear(instanceId, service);
+      }
+      setLogs([]);
+    } catch (e) {
+      console.error("Failed to clear logs:", e);
+    } finally {
+      setClearing(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -135,10 +187,29 @@ function LiveTerminalModal({
             <Button
               variant={autoScroll ? "tonal" : "text"}
               size="sm"
-              onClick={() => setAutoScroll((prev) => !prev)}
+              onClick={() => {
+                setAutoScroll((prev) => {
+                  const next = !prev;
+                  if (next && logContainerRef.current) {
+                    logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+                  }
+                  return next;
+                });
+              }}
               title="Toggle auto-scrolling to newest logs"
             >
               Auto-scroll {autoScroll ? "ON" : "OFF"}
+            </Button>
+            <Button
+              variant="text"
+              size="sm"
+              onClick={handleClear}
+              disabled={clearing || logs.length === 0}
+              className="text-[var(--md-sys-color-error)]"
+              title="Clear all logs for this service"
+            >
+              <Trash2 size={13} className="mr-1" />
+              Clear Logs
             </Button>
             <Button variant="text" size="sm" onClick={load} disabled={loading}>
               <RefreshCw size={14} className={loading ? "animate-spin mr-1" : "mr-1"} />
@@ -153,6 +224,7 @@ function LiveTerminalModal({
         {/* Terminal Log Output */}
         <div
           ref={logContainerRef}
+          onScroll={handleScroll}
           className="flex-1 p-4 bg-[#0a0e14] overflow-y-auto font-mono text-xs select-text leading-relaxed space-y-1"
         >
           {logs.length === 0 ? (
@@ -186,6 +258,24 @@ function LiveTerminalModal({
             })
           )}
         </div>
+
+        {/* Floating Scroll to Bottom pill */}
+        {!autoScroll && logs.length > 0 && (
+          <div className="absolute bottom-12 right-6 z-10">
+            <button
+              onClick={() => {
+                setAutoScroll(true);
+                if (logContainerRef.current) {
+                  logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-xs font-medium shadow-lg hover:opacity-90 transition-all cursor-pointer"
+            >
+              <ArrowDown size={13} />
+              Scroll to Bottom
+            </button>
+          </div>
+        )}
 
         {/* Status Footer */}
         <div className="px-6 py-2.5 bg-[#070a0e] text-gray-400 text-[11px] flex items-center justify-between border-t border-gray-800">
@@ -259,7 +349,7 @@ function AddInstanceDialog({
     setSaving(true);
     const now = new Date().toISOString();
     const config: InstanceConfig = {
-      id: crypto.randomUUID(),
+      id: scan_result.existing_config?.id || crypto.randomUUID(),
       name,
       version: scan_result.version || "unknown",
       root_path: path,
@@ -408,6 +498,170 @@ function AddInstanceDialog({
   );
 }
 
+function UpgradeProcessIndicator({
+  progress,
+  isUpgrading,
+  latestVersion,
+  onViewLogs,
+  onDismiss,
+}: {
+  progress?: UpgradeProgressInfo;
+  isUpgrading: boolean;
+  latestVersion?: string | null;
+  onViewLogs: () => void;
+  onDismiss: () => void;
+}) {
+  const targetVer = progress?.target_version || latestVersion || "latest";
+  const percent = progress?.percent ?? (isUpgrading ? 15 : 0);
+  const stage = progress?.stage;
+
+  if (stage === "complete") {
+    return (
+      <div className="rounded-2xl p-4 bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3 text-emerald-400 animate-in fade-in">
+        <div className="flex items-center gap-2.5">
+          <CheckCircle2 size={20} className="text-emerald-500 shrink-0" />
+          <div>
+            <p className="font-semibold text-sm text-[var(--md-sys-color-on-surface)]">
+              Gradebook v{targetVer} Installed Successfully!
+            </p>
+            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+              All files updated, migrations applied, and services reloaded with 0 downtime.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="text" size="sm" onClick={onDismiss} className="text-xs">
+            Dismiss
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (stage === "error") {
+    return (
+      <div className="rounded-2xl p-4 bg-red-500/10 border border-red-500/30 flex items-center justify-between gap-3 text-red-400">
+        <div className="flex items-center gap-2.5">
+          <AlertTriangle size={20} className="text-red-500 shrink-0" />
+          <div>
+            <p className="font-semibold text-sm text-[var(--md-sys-color-on-surface)]">
+              Installation Failed
+            </p>
+            <p className="text-xs text-red-400/90 line-clamp-1">
+              {progress?.detail || "An error occurred during upgrade."}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="tonal" size="sm" onClick={onViewLogs} className="text-xs">
+            <Terminal size={12} className="mr-1" /> View Error Logs
+          </Button>
+          <Button variant="text" size="sm" onClick={onDismiss} className="text-xs">
+            Dismiss
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // 5 Step definitions
+  const steps = [
+    { num: 1, label: "Download", stageKey: "downloading" },
+    { num: 2, label: "Backup", stageKey: "backup" },
+    { num: 3, label: "Replace Files", stageKey: "extracting" },
+    { num: 4, label: "DB Migrations", stageKey: "migrating" },
+    { num: 5, label: "PM2 Reload", stageKey: "reloading" },
+  ];
+
+  return (
+    <div className="rounded-2xl p-4 bg-gradient-to-r from-amber-500/10 via-[var(--md-sys-color-primary-container)]/30 to-[var(--md-sys-color-surface-container-high)] border border-amber-500/30 flex flex-col gap-3 shadow-sm">
+      {/* Top row */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+            <Sparkles size={16} className="animate-spin text-amber-500" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm text-[var(--md-sys-color-on-surface)]">
+                Installing Gradebook v{targetVer}
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-xs">
+                {percent}%
+              </span>
+            </div>
+            <p className="text-xs text-[var(--md-sys-color-on-surface-variant)] line-clamp-1">
+              {progress?.title ? `${progress.title} — ${progress.detail}` : "Preparing update & downloading assets..."}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="tonal"
+            size="sm"
+            onClick={onViewLogs}
+            className="h-7 text-xs px-2.5 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
+          >
+            <Terminal size={12} className="mr-1" /> View Live Logs
+          </Button>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="w-full h-2 rounded-full bg-black/20 dark:bg-white/10 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-[var(--md-sys-color-primary)] transition-all duration-500 ease-out"
+          style={{ width: `${Math.max(percent, 8)}%` }}
+        />
+      </div>
+
+      {/* Stepper tracker */}
+      <div className="grid grid-cols-5 gap-1.5 pt-1">
+        {steps.map((st, idx) => {
+          const stepIndex = idx + 1;
+          const isDone =
+            (stage === "reloading" && stepIndex <= 4) ||
+            (stage === "migrating" && stepIndex <= 3) ||
+            (stage === "updating_config" && stepIndex <= 3) ||
+            (stage === "extracting" && stepIndex <= 2) ||
+            (stage === "backup" && stepIndex <= 1);
+
+          const isActive =
+            st.stageKey === stage ||
+            (st.stageKey === "extracting" && stage === "updating_config") ||
+            (!stage && isUpgrading && stepIndex === 1);
+
+          return (
+            <div
+              key={idx}
+              className={`flex flex-col items-center gap-1 text-center p-1.5 rounded-xl transition-colors ${
+                isActive
+                  ? "bg-amber-500/15 border border-amber-500/40 text-amber-500"
+                  : isDone
+                  ? "text-emerald-500/90"
+                  : "text-[var(--md-sys-color-on-surface-variant)] opacity-50"
+              }`}
+            >
+              <div className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold">
+                {isDone ? (
+                  <Check size={12} className="text-emerald-500" />
+                ) : isActive ? (
+                  <Loader2 size={12} className="animate-spin text-amber-500" />
+                ) : (
+                  <span>{idx + 1}</span>
+                )}
+              </div>
+              <span className="text-[10px] font-medium leading-tight line-clamp-1">
+                {st.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function InstancesView() {
   const {
     instances,
@@ -417,19 +671,25 @@ export function InstancesView() {
     latestVersion,
     loading,
     installingFor,
+    buildingFor,
     upgradingFor,
+    upgradeProgress,
+    clearUpgradeProgress,
     error,
     refresh,
     save,
     installInFolder,
+    buildFolder,
     upgradeInstance,
     startAppService,
     stopAppService,
     fetchLogs,
+    clearLogs,
     remove,
   } = useInstances();
 
   const [showAdd, setShowAdd] = useState(false);
+  const [buildFirst, setBuildFirst] = useState<Record<string, boolean>>({});
   const [activeTerminal, setActiveTerminal] = useState<{
     instanceId: string;
     instanceName: string;
@@ -544,10 +804,56 @@ export function InstancesView() {
     }
   };
 
+  const handleBuildFolder = async (
+    inst: InstanceConfig,
+    service: "backend" | "frontend" | "all"
+  ) => {
+    setActionMsg(null);
+    setActiveTerminal({
+      instanceId: inst.id,
+      instanceName: inst.name,
+      service: service === "all" ? "backend" : service,
+      title:
+        service === "all"
+          ? "Installing & Building All Services"
+          : `Building ${service === "backend" ? "Backend" : "Frontend"}`,
+      subtitle: `Running bun install & bun run build in ${service}/...`,
+      isRunning: true,
+    });
+
+    try {
+      const res = await buildFolder(inst.id, inst.root_path, service);
+      setActionMsg({ id: inst.id, msg: res });
+      setActiveTerminal((prev) =>
+        prev && prev.instanceId === inst.id
+          ? { ...prev, isRunning: false }
+          : prev
+      );
+    } catch (e) {
+      setActionMsg({ id: inst.id, msg: String(e), isError: true });
+      setActiveTerminal((prev) =>
+        prev && prev.instanceId === inst.id
+          ? { ...prev, isRunning: false }
+          : prev
+      );
+    }
+  };
+
   const handleStartService = async (inst: InstanceConfig, service: "backend" | "frontend") => {
     setActionMsg(null);
+    const shouldBuild = Boolean(buildFirst[`${inst.id}:${service}`]);
+    setActiveTerminal({
+      instanceId: inst.id,
+      instanceName: inst.name,
+      service,
+      title: `${service === "backend" ? "Backend" : "Frontend"} Service Logs`,
+      subtitle: shouldBuild
+        ? "Installing dependencies, building production assets & starting PM2 service..."
+        : "Starting PM2 service...",
+      isRunning: true,
+    });
     try {
-      const res = await startAppService(inst.id, inst.root_path, service);
+      const res = await startAppService(inst.id, inst.root_path, service, shouldBuild);
       setActionMsg({ id: inst.id, msg: res });
     } catch (e) {
       setActionMsg({ id: inst.id, msg: String(e), isError: true });
@@ -557,7 +863,7 @@ export function InstancesView() {
   const handleStopService = async (inst: InstanceConfig, service: "backend" | "frontend") => {
     setActionMsg(null);
     try {
-      const res = await stopAppService(inst.id, service);
+      const res = await stopAppService(inst.id, inst.root_path, service);
       setActionMsg({ id: inst.id, msg: res });
     } catch (e) {
       setActionMsg({ id: inst.id, msg: String(e), isError: true });
@@ -692,7 +998,9 @@ export function InstancesView() {
         const isFrontendRunning = status.frontend.running;
 
         const isInstallingThis = installingFor?.startsWith(inst.id);
+        const isBuildingThis = buildingFor?.startsWith(inst.id);
         const isUpgradingThis = upgradingFor === inst.id;
+        const prog = upgradeProgress[inst.id];
 
         const hasUpdate = Boolean(latestVersion && compareSemver(latestVersion, inst.version) > 0);
         const isUpToDate = Boolean(
@@ -701,14 +1009,31 @@ export function InstancesView() {
 
         return (
           <Card key={inst.id} variant="elevated" className="p-5 flex flex-col gap-4">
-            {/* Active Operation Alert Banner (if running in background) */}
-            {(isInstallingThis || isUpgradingThis) && (
+            {/* Live Version Installation & Upgrade Stepper Indicator */}
+            {(prog || isUpgradingThis) ? (
+              <UpgradeProcessIndicator
+                progress={prog}
+                isUpgrading={isUpgradingThis}
+                latestVersion={latestVersion}
+                onViewLogs={() =>
+                  setActiveTerminal({
+                    instanceId: inst.id,
+                    instanceName: inst.name,
+                    service: "upgrade",
+                    title: `Upgrading to v${prog?.target_version || latestVersion}`,
+                    subtitle: "Live upgrade terminal & process output",
+                    isRunning: prog?.stage !== "complete" && prog?.stage !== "error",
+                  })
+                }
+                onDismiss={() => clearUpgradeProgress(inst.id)}
+              />
+            ) : (isInstallingThis || isBuildingThis) ? (
               <div className="px-4 py-2.5 rounded-xl bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)] flex items-center justify-between gap-3 text-xs font-medium animate-pulse">
                 <div className="flex items-center gap-2">
                   <Loader2 size={14} className="animate-spin" />
                   <span>
-                    {isUpgradingThis
-                      ? `Upgrading instance to v${latestVersion}…`
+                    {isBuildingThis
+                      ? `Building production assets in progress…`
                       : `Installing packages in progress…`}
                   </span>
                 </div>
@@ -719,8 +1044,12 @@ export function InstancesView() {
                     setActiveTerminal({
                       instanceId: inst.id,
                       instanceName: inst.name,
-                      service: isUpgradingThis ? "upgrade" : "install",
-                      title: isUpgradingThis ? `Upgrading to v${latestVersion}` : "Installing Packages",
+                      service: isBuildingThis
+                        ? (buildingFor?.split(":")[1] || "backend")
+                        : "install",
+                      title: isBuildingThis
+                        ? "Building Production Assets"
+                        : "Installing Packages",
                       isRunning: true,
                     })
                   }
@@ -728,7 +1057,7 @@ export function InstancesView() {
                   <Terminal size={12} className="mr-1" /> View Live Logs
                 </Button>
               </div>
-            )}
+            ) : null}
 
             {/* Directory / Service Missing Warnings */}
             {inst.root_exists === false && (
@@ -808,7 +1137,34 @@ export function InstancesView() {
                   )}
 
                   {/* Version & Status Comparison */}
-                  {isUpToDate ? (
+                  {((prog && prog.stage !== "complete") || isUpgradingThis) ? (
+                    <div className="flex items-center gap-1.5">
+                      <Chip
+                        variant="assist"
+                        icon={<Loader2 size={12} className="animate-spin text-amber-500" />}
+                        className="text-amber-500 font-semibold border-amber-500/40 bg-amber-500/10"
+                      >
+                        Installing v{prog?.target_version || latestVersion} ({prog?.percent ?? 15}%)
+                      </Chip>
+                      <Button
+                        variant="tonal"
+                        size="sm"
+                        className="h-6 text-xs px-2 py-0 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
+                        onClick={() =>
+                          setActiveTerminal({
+                            instanceId: inst.id,
+                            instanceName: inst.name,
+                            service: "upgrade",
+                            title: `Upgrading to v${prog?.target_version || latestVersion}`,
+                            subtitle: "Live upgrade terminal & process output",
+                            isRunning: prog?.stage !== "complete" && prog?.stage !== "error",
+                          })
+                        }
+                      >
+                        <Terminal size={11} className="mr-1" /> View Logs
+                      </Button>
+                    </div>
+                  ) : isUpToDate ? (
                     <Chip
                       variant="assist"
                       icon={<CheckCircle2 size={12} className="text-emerald-500" />}
@@ -894,6 +1250,7 @@ export function InstancesView() {
                   onClick={() => handleInstallFolder(inst, "all")}
                   disabled={
                     Boolean(installingFor) ||
+                    Boolean(buildingFor) ||
                     isUpgradingThis ||
                     !systemEnv?.has_bun ||
                     inst.root_exists === false
@@ -910,6 +1267,30 @@ export function InstancesView() {
                     <Layers size={13} className="mr-1.5" />
                   )}
                   Install in All Folders
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="sm"
+                  onClick={() => handleBuildFolder(inst, "all")}
+                  disabled={
+                    Boolean(installingFor) ||
+                    Boolean(buildingFor) ||
+                    isUpgradingThis ||
+                    !systemEnv?.has_bun ||
+                    inst.root_exists === false
+                  }
+                  title={
+                    inst.root_exists === false
+                      ? "Cannot build: directory not found on disk"
+                      : "Build all services (bun run build in backend & frontend)"
+                  }
+                >
+                  {buildingFor === `${inst.id}:all` ? (
+                    <Loader2 size={13} className="animate-spin mr-1.5" />
+                  ) : (
+                    <Hammer size={13} className="mr-1.5" />
+                  )}
+                  Build All
                 </Button>
                 <Button
                   variant="text"
@@ -964,21 +1345,22 @@ export function InstancesView() {
                           Folder missing from disk (backend/)
                         </span>
                       ) : isBackendRunning ? (
-                        `Running${status.backend.pid ? ` • PID ${status.backend.pid}` : ""} • ${inst.backend_url}`
+                        `Running via PM2 (${status.backend.pm2_name || "backend"}${status.backend.pid ? ` • PID ${status.backend.pid}` : ""}) • ${inst.backend_url}`
                       ) : (
-                        `Stopped • Port ${inst.backend_url.split(":").pop() || "3001"}`
+                        `Stopped • PM2: ${status.backend.pm2_status || "stopped"} • Port ${inst.backend_url.split(":").pop() || "3001"}`
                       )}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <Button
                     variant="text"
                     size="sm"
                     onClick={() => handleInstallFolder(inst, "backend")}
                     disabled={
                       Boolean(installingFor) ||
+                      Boolean(buildingFor) ||
                       isUpgradingThis ||
                       isBackendRunning ||
                       inst.has_backend === false ||
@@ -995,7 +1377,34 @@ export function InstancesView() {
                     ) : (
                       <Package size={13} className="mr-1" />
                     )}
-                    Install in backend/
+                    Install
+                  </Button>
+
+                  <Button
+                    variant={isBackendRunning ? "tonal" : "text"}
+                    size="sm"
+                    onClick={() => handleBuildFolder(inst, "backend")}
+                    disabled={
+                      Boolean(installingFor) ||
+                      Boolean(buildingFor) ||
+                      isUpgradingThis ||
+                      inst.has_backend === false ||
+                      inst.root_exists === false
+                    }
+                    title={
+                      inst.has_backend === false || inst.root_exists === false
+                        ? "backend/ directory does not exist on disk"
+                        : isBackendRunning
+                        ? "Zero-Downtime: Compiles new assets while keeping backend running online, then seamlessly replaces the process"
+                        : "Run bun run build inside backend/ folder"
+                    }
+                  >
+                    {buildingFor === `${inst.id}:backend` ? (
+                      <Loader2 size={13} className="animate-spin mr-1" />
+                    ) : (
+                      <Hammer size={13} className="mr-1" />
+                    )}
+                    {isBackendRunning ? "Rebuild & Reload" : "Build"}
                   </Button>
 
                   <Button
@@ -1026,23 +1435,46 @@ export function InstancesView() {
                       <Square size={13} className="mr-1 fill-current" /> Stop
                     </Button>
                   ) : (
-                    <Button
-                      variant="filled"
-                      size="sm"
-                      onClick={() => handleStartService(inst, "backend")}
-                      disabled={
-                        !systemEnv?.has_bun ||
-                        inst.has_backend === false ||
-                        inst.root_exists === false
-                      }
-                      title={
-                        inst.has_backend === false || inst.root_exists === false
-                          ? "Cannot start: backend/ directory missing on disk"
-                          : "Start backend service"
-                      }
-                    >
-                      <Play size={13} className="mr-1 fill-current" /> Start
-                    </Button>
+                    <div className="flex items-center gap-1.5">
+                      <label
+                        className="flex items-center gap-1 text-[11px] text-[var(--md-sys-color-on-surface-variant)] cursor-pointer select-none px-1.5 py-1 rounded hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors"
+                        title="Run `bun run build` before starting PM2 service"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={Boolean(buildFirst[`${inst.id}:backend`])}
+                          onChange={(e) =>
+                            setBuildFirst((prev) => ({
+                              ...prev,
+                              [`${inst.id}:backend`]: e.target.checked,
+                            }))
+                          }
+                          className="rounded accent-[var(--md-sys-color-primary)] cursor-pointer size-3.5"
+                        />
+                        <span>Build first</span>
+                      </label>
+                      <Button
+                        variant="filled"
+                        size="sm"
+                        onClick={() => handleStartService(inst, "backend")}
+                        disabled={
+                          !systemEnv?.has_bun ||
+                          inst.has_backend === false ||
+                          inst.root_exists === false ||
+                          Boolean(buildingFor)
+                        }
+                        title={
+                          inst.has_backend === false || inst.root_exists === false
+                            ? "Cannot start: backend/ directory missing on disk"
+                            : buildFirst[`${inst.id}:backend`]
+                            ? "Build production assets and start backend service"
+                            : "Start backend service"
+                        }
+                      >
+                        <Play size={13} className="mr-1 fill-current" />
+                        {buildFirst[`${inst.id}:backend`] ? "Build & Start" : "Start"}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1070,21 +1502,22 @@ export function InstancesView() {
                           Folder missing from disk (frontend/)
                         </span>
                       ) : isFrontendRunning ? (
-                        `Running${status.frontend.pid ? ` • PID ${status.frontend.pid}` : ""} • ${inst.frontend_url}`
+                        `Running via PM2 (${status.frontend.pm2_name || "frontend"}${status.frontend.pid ? ` • PID ${status.frontend.pid}` : ""}) • ${inst.frontend_url}`
                       ) : (
-                        `Stopped • Port ${inst.frontend_url.split(":").pop() || "3000"}`
+                        `Stopped • PM2: ${status.frontend.pm2_status || "stopped"} • Port ${inst.frontend_url.split(":").pop() || "3000"}`
                       )}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <Button
                     variant="text"
                     size="sm"
                     onClick={() => handleInstallFolder(inst, "frontend")}
                     disabled={
                       Boolean(installingFor) ||
+                      Boolean(buildingFor) ||
                       isUpgradingThis ||
                       isFrontendRunning ||
                       inst.has_frontend === false ||
@@ -1101,7 +1534,34 @@ export function InstancesView() {
                     ) : (
                       <Package size={13} className="mr-1" />
                     )}
-                    Install in frontend/
+                    Install
+                  </Button>
+
+                  <Button
+                    variant={isFrontendRunning ? "tonal" : "text"}
+                    size="sm"
+                    onClick={() => handleBuildFolder(inst, "frontend")}
+                    disabled={
+                      Boolean(installingFor) ||
+                      Boolean(buildingFor) ||
+                      isUpgradingThis ||
+                      inst.has_frontend === false ||
+                      inst.root_exists === false
+                    }
+                    title={
+                      inst.has_frontend === false || inst.root_exists === false
+                        ? "frontend/ directory does not exist on disk"
+                        : isFrontendRunning
+                        ? "Zero-Downtime: Compiles new assets while keeping frontend running online, then seamlessly replaces the process"
+                        : "Run bun run build inside frontend/ folder"
+                    }
+                  >
+                    {buildingFor === `${inst.id}:frontend` ? (
+                      <Loader2 size={13} className="animate-spin mr-1" />
+                    ) : (
+                      <Hammer size={13} className="mr-1" />
+                    )}
+                    {isFrontendRunning ? "Rebuild & Reload" : "Build"}
                   </Button>
 
                   <Button
@@ -1143,23 +1603,46 @@ export function InstancesView() {
                       <Square size={13} className="mr-1 fill-current" /> Stop
                     </Button>
                   ) : (
-                    <Button
-                      variant="filled"
-                      size="sm"
-                      onClick={() => handleStartService(inst, "frontend")}
-                      disabled={
-                        !systemEnv?.has_bun ||
-                        inst.has_frontend === false ||
-                        inst.root_exists === false
-                      }
-                      title={
-                        inst.has_frontend === false || inst.root_exists === false
-                          ? "Cannot start: frontend/ directory missing on disk"
-                          : "Start frontend service"
-                      }
-                    >
-                      <Play size={13} className="mr-1 fill-current" /> Start
-                    </Button>
+                    <div className="flex items-center gap-1.5">
+                      <label
+                        className="flex items-center gap-1 text-[11px] text-[var(--md-sys-color-on-surface-variant)] cursor-pointer select-none px-1.5 py-1 rounded hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors"
+                        title="Run `bun run build` before starting PM2 service"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={Boolean(buildFirst[`${inst.id}:frontend`])}
+                          onChange={(e) =>
+                            setBuildFirst((prev) => ({
+                              ...prev,
+                              [`${inst.id}:frontend`]: e.target.checked,
+                            }))
+                          }
+                          className="rounded accent-[var(--md-sys-color-primary)] cursor-pointer size-3.5"
+                        />
+                        <span>Build first</span>
+                      </label>
+                      <Button
+                        variant="filled"
+                        size="sm"
+                        onClick={() => handleStartService(inst, "frontend")}
+                        disabled={
+                          !systemEnv?.has_bun ||
+                          inst.has_frontend === false ||
+                          inst.root_exists === false ||
+                          Boolean(buildingFor)
+                        }
+                        title={
+                          inst.has_frontend === false || inst.root_exists === false
+                            ? "Cannot start: frontend/ directory missing on disk"
+                            : buildFirst[`${inst.id}:frontend`]
+                            ? "Build production assets and start frontend service"
+                            : "Start frontend service"
+                        }
+                      >
+                        <Play size={13} className="mr-1 fill-current" />
+                        {buildFirst[`${inst.id}:frontend`] ? "Build & Start" : "Start"}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1199,6 +1682,7 @@ export function InstancesView() {
           isRunning={activeTerminal.isRunning}
           onClose={() => setActiveTerminal(null)}
           fetchLogs={fetchLogs}
+          onClear={clearLogs}
         />
       )}
     </div>

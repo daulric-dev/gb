@@ -2,9 +2,42 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use crate::commands::instance::{find_bun, get_registry_path, sanitize_workspaces};
 use crate::commands::service::{append_log_arc_pub, ProcessState};
+
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct UpgradeProgressPayload {
+    pub instance_id: String,
+    pub step: u8,
+    pub total_steps: u8,
+    pub stage: String,
+    pub title: String,
+    pub detail: String,
+    pub percent: u8,
+}
+
+fn emit_progress(
+    app: &AppHandle,
+    instance_id: &str,
+    step: u8,
+    total_steps: u8,
+    stage: &str,
+    title: &str,
+    detail: &str,
+    percent: u8,
+) {
+    let payload = UpgradeProgressPayload {
+        instance_id: instance_id.to_string(),
+        step,
+        total_steps,
+        stage: stage.to_string(),
+        title: title.to_string(),
+        detail: detail.to_string(),
+        percent,
+    };
+    let _ = app.emit("upgrade-progress", &payload);
+}
 
 fn is_protected_file(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
@@ -34,6 +67,7 @@ fn is_protected_file(path: &Path) -> bool {
 
 #[tauri::command]
 pub fn extract_and_upgrade_instance(
+    app: AppHandle,
     state: State<ProcessState>,
     instance_id: String,
     instance_root: String,
@@ -48,15 +82,18 @@ pub fn extract_and_upgrade_instance(
         &log_key,
         format!("[Gradebook Manager] Starting in-place upgrade in {:?}...", root),
     );
+    emit_progress(&app, &instance_id, 1, 5, "backup", "Creating Snapshot Backup", "Backing up configuration and .env secrets...", 15);
 
     if !root.exists() {
         let err = "Target instance root does not exist".to_string();
         append_log_arc_pub(&state.logs, &log_key, format!("[Error] {}", err));
+        emit_progress(&app, &instance_id, 1, 5, "error", "Upgrade Failed", &err, 0);
         return Err(err);
     }
     if !zip_file_path.exists() {
         let err = "Downloaded archive file does not exist".to_string();
         append_log_arc_pub(&state.logs, &log_key, format!("[Error] {}", err));
+        emit_progress(&app, &instance_id, 1, 5, "error", "Upgrade Failed", &err, 0);
         return Err(err);
     }
 
@@ -81,9 +118,18 @@ pub fn extract_and_upgrade_instance(
     }
 
     // 2. Open zip archive and detect common wrapper directory
+    emit_progress(&app, &instance_id, 2, 5, "extracting", "Extracting & Replacing Files", "Inspecting release archive and diffing files...", 35);
     append_log_arc_pub(&state.logs, &log_key, "[2/5] Inspecting release archive & diffing files...".into());
-    let file = fs::File::open(zip_file_path).map_err(|e| format!("Failed to open zip archive: {}", e))?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip header: {}", e))?;
+    let file = fs::File::open(zip_file_path).map_err(|e| {
+        let err = format!("Failed to open zip archive: {}", e);
+        emit_progress(&app, &instance_id, 2, 5, "error", "Upgrade Failed", &err, 0);
+        err
+    })?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| {
+        let err = format!("Failed to read zip header: {}", e);
+        emit_progress(&app, &instance_id, 2, 5, "error", "Upgrade Failed", &err, 0);
+        err
+    })?;
 
     let total_files = archive.len();
 
@@ -123,6 +169,7 @@ pub fn extract_and_upgrade_instance(
     let mut added_files: Vec<String> = Vec::new();
     let mut modified_files: Vec<String> = Vec::new();
     let mut unchanged_count: usize = 0;
+    let mut archive_files_set: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
     for i in 0..total_files {
         let mut file = archive.by_index(i).map_err(|e| format!("Failed to read zip entry: {}", e))?;
@@ -149,9 +196,10 @@ pub fn extract_and_upgrade_instance(
             continue;
         }
 
-        if file.name().ends_with('/') {
+        if file.is_dir() {
             let _ = fs::create_dir_all(&outpath);
         } else {
+            archive_files_set.insert(rel_path.clone());
             let mut new_bytes = Vec::new();
             file.read_to_end(&mut new_bytes)
                 .map_err(|e| format!("Failed to read content of {:?}: {}", rel_path, e))?;
@@ -174,6 +222,43 @@ pub fn extract_and_upgrade_instance(
                 fs::write(&outpath, &new_bytes)
                     .map_err(|e| format!("Failed to create {:?}: {}", rel_path, e))?;
                 added_files.push(rel_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Completely replace old version: identify and remove any obsolete files from the previous version
+    let mut deleted_files: Vec<String> = Vec::new();
+
+    fn scan_obsolete_files(dir: &Path, base: &Path, files: &mut Vec<PathBuf>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Ok(rel) = path.strip_prefix(base) {
+                    if is_protected_file(rel) {
+                        continue;
+                    }
+                }
+                if path.is_dir() {
+                    scan_obsolete_files(&path, base, files);
+                } else if path.is_file() {
+                    if let Ok(rel) = path.strip_prefix(base) {
+                        files.push(rel.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut existing_files = Vec::new();
+    scan_obsolete_files(root, root, &mut existing_files);
+
+    for existing_rel in existing_files {
+        if !is_protected_file(&existing_rel) && !archive_files_set.contains(&existing_rel) {
+            let full_path = root.join(&existing_rel);
+            if full_path.exists() {
+                if let Ok(()) = fs::remove_file(&full_path) {
+                    deleted_files.push(existing_rel.to_string_lossy().to_string());
+                }
             }
         }
     }
@@ -201,17 +286,32 @@ pub fn extract_and_upgrade_instance(
         );
     }
 
+    for d in deleted_files.iter().take(15) {
+        append_log_arc_pub(&state.logs, &log_key, format!("  D {}", d));
+    }
+    if deleted_files.len() > 15 {
+        append_log_arc_pub(
+            &state.logs,
+            &log_key,
+            format!("  ... and {} more removed obsolete files", deleted_files.len() - 15),
+        );
+    }
+
+    let diff_summary_str = format!(
+        "{} files updated ({} modified, {} added, {} deleted, {} unchanged)",
+        modified_files.len() + added_files.len() + deleted_files.len(),
+        modified_files.len(),
+        added_files.len(),
+        deleted_files.len(),
+        unchanged_count
+    );
+
     append_log_arc_pub(
         &state.logs,
         &log_key,
-        format!(
-            "  Diff summary: {} files updated ({} modified, {} added, {} unchanged).",
-            modified_files.len() + added_files.len(),
-            modified_files.len(),
-            added_files.len(),
-            unchanged_count
-        ),
+        format!("  Diff summary: {}.", diff_summary_str),
     );
+    emit_progress(&app, &instance_id, 2, 5, "extracting", "Files Replaced", &diff_summary_str, 55);
 
     // 3. Clean up accidental nested directory & temporary zip archive
     if let Some(ref prefix) = wrapper_prefix {
@@ -228,6 +328,7 @@ pub fn extract_and_upgrade_instance(
     }
 
     // 4. Update instance.json and global registry in-place
+    emit_progress(&app, &instance_id, 3, 5, "updating_config", "Updating Version Registry", "Updating instance metadata and registry...", 68);
     append_log_arc_pub(&state.logs, &log_key, "[3/5] Updating instance version & registry...".into());
     let pkg_path = root.join("package.json");
     let mut new_ver_str: Option<String> = None;
@@ -321,9 +422,10 @@ pub fn extract_and_upgrade_instance(
 
     // 6. Run bun db:deploy and db:harden if bun is available
     let bun_info = find_bun();
-    let migration_note = if let Some((bun_cmd, _)) = bun_info {
+    let migration_note = if let Some((bun_cmd, _)) = bun_info.as_ref() {
+        emit_progress(&app, &instance_id, 4, 5, "migrating", "Applying Database Migrations", "Running bun run db:deploy and db:harden...", 80);
         append_log_arc_pub(&state.logs, &log_key, "[4/5] Applying database migrations (bun run db:deploy)...".into());
-        let bun_status = Command::new(&bun_cmd)
+        let bun_status = Command::new(bun_cmd)
             .args(["run", "db:deploy"])
             .current_dir(root)
             .status();
@@ -332,7 +434,7 @@ pub fn extract_and_upgrade_instance(
             Ok(s) if s.success() => {
                 append_log_arc_pub(&state.logs, &log_key, "  Migrations applied successfully.".into());
                 append_log_arc_pub(&state.logs, &log_key, "[5/5] Hardening schema (bun run db:harden)...".into());
-                let _ = Command::new(&bun_cmd)
+                let _ = Command::new(bun_cmd)
                     .args(["run", "db:harden"])
                     .current_dir(root)
                     .status();
@@ -349,7 +451,63 @@ pub fn extract_and_upgrade_instance(
         "Code updated in-place. Install Bun to run database migrations."
     };
 
+    // 7. Zero-Downtime process reload: if services were online before upgrade, compile in background and replace in PM2
+    let backend_name = crate::commands::service::pm2_name(&instance_id, "backend");
+    let frontend_name = crate::commands::service::pm2_name(&instance_id, "frontend");
+    let backend_dir = root.join("backend");
+    let frontend_dir = root.join("frontend");
+
+    let backend_was_running = crate::commands::service::is_pm2_online(&backend_name, Some(&backend_dir));
+    let frontend_was_running = crate::commands::service::is_pm2_online(&frontend_name, Some(&frontend_dir));
+
+    if (backend_was_running || frontend_was_running) && bun_info.is_some() {
+        emit_progress(&app, &instance_id, 5, 5, "reloading", "Zero-Downtime Reload", "Building updated assets and rolling reload in PM2...", 92);
+        let (bun_cmd, _) = bun_info.as_ref().unwrap();
+        let bun_str = bun_cmd.to_string_lossy().to_string();
+
+        if backend_was_running && backend_dir.exists() {
+            append_log_arc_pub(&state.logs, &log_key, "[Zero-Downtime] Backend was online. Installing updated dependencies in backend/...".into());
+            let prisma_gen = backend_dir.join("src").join("generated").join("prisma");
+            if prisma_gen.exists() && (!prisma_gen.join("index.d.ts").exists() && !prisma_gen.join("index.js").exists()) {
+                let _ = fs::remove_dir_all(&prisma_gen);
+            }
+            let _ = Command::new(bun_cmd).args(["install"]).current_dir(&backend_dir).status();
+
+            append_log_arc_pub(&state.logs, &log_key, "[Zero-Downtime] Compiling updated backend assets in background...".into());
+            let mut build_cmd = Command::new(bun_cmd);
+            build_cmd.args(["run", "build"]).current_dir(&backend_dir).env("NODE_ENV", "production").env("LOCAL_PREVIEW", "true");
+            if let Ok(status) = build_cmd.status() {
+                if status.success() {
+                    let script = crate::commands::service::get_service_script(&backend_dir, "backend");
+                    let _ = crate::commands::service::spawn_or_replace_pm2_service(&backend_name, &backend_dir, script, &bun_str, &state.logs, &log_key);
+                    append_log_arc_pub(&state.logs, &log_key, "[Zero-Downtime] ✓ Backend seamlessly reloaded in PM2 with new version.".into());
+                } else {
+                    append_log_arc_pub(&state.logs, &log_key, "[Safety] ⚠️ Backend build failed during upgrade. Old process preserved online.".into());
+                }
+            }
+        }
+
+        if frontend_was_running && frontend_dir.exists() {
+            append_log_arc_pub(&state.logs, &log_key, "[Zero-Downtime] Frontend was online. Installing updated dependencies in frontend/...".into());
+            let _ = Command::new(bun_cmd).args(["install"]).current_dir(&frontend_dir).status();
+
+            append_log_arc_pub(&state.logs, &log_key, "[Zero-Downtime] Compiling updated frontend assets in background...".into());
+            let mut build_cmd = Command::new(bun_cmd);
+            build_cmd.args(["run", "build"]).current_dir(&frontend_dir).env("NODE_ENV", "production").env("LOCAL_PREVIEW", "true");
+            if let Ok(status) = build_cmd.status() {
+                if status.success() {
+                    let script = crate::commands::service::get_service_script(&frontend_dir, "frontend");
+                    let _ = crate::commands::service::spawn_or_replace_pm2_service(&frontend_name, &frontend_dir, script, &bun_str, &state.logs, &log_key);
+                    append_log_arc_pub(&state.logs, &log_key, "[Zero-Downtime] ✓ Frontend seamlessly reloaded in PM2 with new version.".into());
+                } else {
+                    append_log_arc_pub(&state.logs, &log_key, "[Safety] ⚠️ Frontend build failed during upgrade. Old process preserved online.".into());
+                }
+            }
+        }
+    }
+
     append_log_arc_pub(&state.logs, &log_key, "[Upgrade] ✓ Upgrade successfully completed!".into());
+    emit_progress(&app, &instance_id, 5, 5, "complete", "Upgrade Completed", "Version successfully installed and running!", 100);
 
     Ok(format!(
         "Upgrade completed. {} files updated. Backup in {}. {}",
