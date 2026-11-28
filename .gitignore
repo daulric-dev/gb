@@ -101,3 +101,4 @@ next-env.d.ts
 !**/.env.example
 !.env.example
 .expo
+*.vscode
