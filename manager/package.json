@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "release": "bun scripts/release.ts"
   },
   "dependencies": {
     "@preact/signals-react": "^3.12.0",
