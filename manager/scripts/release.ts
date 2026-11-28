@@ -1,23 +1,71 @@
 #!/usr/bin/env bun
 /**
- * manager/scripts/release.ts
+ * Cut a manager release: `bun release <major|minor|patch> [--dry-run] [--yes]`
  *
- * Usage:
- *   bun run release            — prompts: major / minor / patch, then tags + pushes
- *   bun run release --dry-run  — preview only, nothing is written or pushed
+ * Finds the latest `manager-vX.Y.Z` tag (none yet = 0.0.0), bumps the chosen
+ * part, writes the new version to package.json + tauri.conf.json, commits,
+ * creates an annotated tag and pushes. The push triggers
+ * .github/workflows/manager-release.yml, which builds macOS / Linux / Windows
+ * installers and publishes the GitHub Release.
+ *
+ * Refuses unless the working tree is clean, you are on `main` and `main`
+ * matches `origin/main`.
+ *
+ *   --dry-run  show what would happen; write and tag nothing
+ *   --yes      skip the confirmation prompt
  */
-
 import { $ } from "bun";
 import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
-import * as readline from "readline";
 
-const dryRun = process.argv.includes("--dry-run");
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+const RELEASE_BRANCH = "main";
+const REMOTE = "origin";
+const BUMPS = ["major", "minor", "patch"] as const;
+type Bump = (typeof BUMPS)[number];
 
 const pkgPath = resolve(import.meta.dir, "../package.json");
 const tauriConfPath = resolve(import.meta.dir, "../src-tauri/tauri.conf.json");
+
+function fail(message: string): never {
+  console.error(`release: ${message}`);
+  process.exit(1);
+}
+
+function usage(): never {
+  console.error("Usage: bun release <major|minor|patch> [--dry-run] [--yes]");
+  process.exit(1);
+}
+
+type Version = [number, number, number];
+
+function parse(tag: string): Version | null {
+  const m = /^manager-v(\d+)\.(\d+)\.(\d+)$/.exec(tag);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+function bump([major, minor, patch]: Version, part: Bump): Version {
+  if (part === "major") return [major + 1, 0, 0];
+  if (part === "minor") return [major, minor + 1, 0];
+  return [major, minor, patch + 1];
+}
+
+const format = (v: Version) => v.join(".");
+
+async function git(args: string[]): Promise<string> {
+  const res = await $`git ${args}`.quiet().nothrow();
+  if (res.exitCode !== 0) {
+    fail(`git ${args.join(" ")} failed:\n${res.stderr.toString().trim()}`);
+  }
+  return res.stdout.toString().trim();
+}
+
+async function confirm(question: string): Promise<boolean> {
+  process.stdout.write(`${question} [y/N] `);
+  for await (const line of console) {
+    return /^y(es)?$/i.test(line.trim());
+  }
+  return false;
+}
 
 function readJson(p: string): Record<string, any> {
   return JSON.parse(readFileSync(p, "utf8"));
@@ -27,140 +75,85 @@ function writeJson(p: string, data: Record<string, any>) {
   writeFileSync(p, JSON.stringify(data, null, 2) + "\n");
 }
 
-function bumpVersion(version: string, type: "major" | "minor" | "patch"): string {
-  const [major, minor, patch] = version.split(".").map(Number);
-  if (type === "major") return `${major + 1}.0.0`;
-  if (type === "minor") return `${major}.${minor + 1}.0`;
-  return `${major}.${minor}.${patch + 1}`;
+// ── Args ──────────────────────────────────────────────────────────────────────
+
+const args = process.argv.slice(2);
+const part = args.find((a) => !a.startsWith("--"));
+const dryRun = args.includes("--dry-run");
+const yes = args.includes("--yes");
+if (!part || !BUMPS.includes(part as Bump)) usage();
+
+// ── Git checks ────────────────────────────────────────────────────────────────
+
+if (await git(["status", "--porcelain"])) {
+  fail("the working tree has uncommitted changes; commit or stash them first.");
+}
+const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
+if (branch !== RELEASE_BRANCH) {
+  fail(`releases are cut from ${RELEASE_BRANCH}; you are on ${branch}.`);
+}
+await git(["fetch", REMOTE, RELEASE_BRANCH, "--tags", "--quiet"]);
+const head = await git(["rev-parse", "HEAD"]);
+const remoteHead = await git(["rev-parse", `${REMOTE}/${RELEASE_BRANCH}`]);
+if (head !== remoteHead) {
+  fail(`${RELEASE_BRANCH} differs from ${REMOTE}/${RELEASE_BRANCH}; pull or push first.`);
 }
 
-function prompt(question: string): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
+// ── Version ───────────────────────────────────────────────────────────────────
+
+const tags = (await git(["tag", "--list", "manager-v*.*.*"])).split("\n").filter(Boolean);
+const current = tags
+  .map(parse)
+  .filter((v): v is Version => v !== null)
+  .sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2])[0] ?? ([0, 0, 0] as Version);
+
+const next = bump(current, part as Bump);
+const tag = `manager-v${format(next)}`;
+if (tags.includes(tag)) fail(`${tag} already exists.`);
+
+const short = head.slice(0, 7);
+console.log(`Latest release: ${tags.length ? `manager-v${format(current)}` : "none"}`);
+console.log(`Next release:   ${tag} (${part}) at ${short} on ${RELEASE_BRANCH}`);
+
+if (dryRun) {
+  console.log("Dry run: nothing was tagged or pushed.");
+  process.exit(0);
 }
-
-function log(msg: string) {
-  console.log(msg);
-}
-
-async function run(cmd: string, label: string) {
-  log(`  › ${label}`);
-  if (dryRun) {
-    log(`    [dry-run] skipping: ${cmd}`);
-    return;
-  }
-  await $`bash -c ${cmd}`;
-}
-
-// ── Read current version ──────────────────────────────────────────────────────
-
-const pkg = readJson(pkgPath);
-const current = pkg.version as string;
-
-log(`\n🚀 Gradebook Manager — Release`);
-log(`   Current version : ${current}`);
-if (dryRun) log(`   Mode            : DRY RUN\n`);
-else log(``);
-
-// ── Check working tree is clean ───────────────────────────────────────────────
-
-const dirty = await $`git status --porcelain`.text();
-if (dirty.trim()) {
-  console.error("❌ Working tree is not clean. Commit or stash your changes first.");
-  console.error(dirty);
-  process.exit(1);
-}
-
-// ── Prompt for bump type ──────────────────────────────────────────────────────
-
-log(`   What kind of release is this?`);
-log(`     [1] patch  — bug fixes          (${bumpVersion(current, "patch")})`);
-log(`     [2] minor  — new features       (${bumpVersion(current, "minor")})`);
-log(`     [3] major  — breaking changes   (${bumpVersion(current, "major")})\n`);
-
-let bumpType: "major" | "minor" | "patch";
-
-while (true) {
-  const answer = await prompt("   Enter 1 / 2 / 3  (or patch / minor / major): ");
-  if (answer === "1" || answer === "patch") { bumpType = "patch"; break; }
-  if (answer === "2" || answer === "minor") { bumpType = "minor"; break; }
-  if (answer === "3" || answer === "major") { bumpType = "major"; break; }
-  log("   ⚠️  Please enter 1, 2 or 3.");
-}
-
-const newVersion = bumpVersion(current, bumpType);
-const tag = `manager-v${newVersion}`;
-
-log(`\n   Bump   : ${current} → ${newVersion}  (${bumpType})`);
-log(`   Tag    : ${tag}\n`);
-
-// ── Confirm ───────────────────────────────────────────────────────────────────
-
-const confirm = await prompt(`   Confirm? [y/N]: `);
-if (!["y", "yes"].includes(confirm.toLowerCase())) {
-  log("\n   Aborted.");
+if (!yes && !(await confirm(`Tag ${short} as ${tag} and push it to ${REMOTE}?`))) {
+  console.log("Cancelled.");
   process.exit(0);
 }
 
-// ── Check tag doesn't already exist ──────────────────────────────────────────
+// ── Bump version files ────────────────────────────────────────────────────────
 
-const existing = await $`git tag --list ${tag}`.text();
-if (existing.trim()) {
-  console.error(`\n❌ Tag "${tag}" already exists.`);
-  process.exit(1);
-}
+const newVersion = format(next);
 
-// ── Bump versions in package.json + tauri.conf.json ──────────────────────────
+const pkg = readJson(pkgPath);
+pkg.version = newVersion;
+writeJson(pkgPath, pkg);
 
-log(`\n  › Bumping package.json  ${current} → ${newVersion}`);
-if (!dryRun) {
-  pkg.version = newVersion;
-  writeJson(pkgPath, pkg);
-}
-
-// Also keep tauri.conf.json in sync if it has a version field
 try {
   const tauriConf = readJson(tauriConfPath);
-  if (tauriConf.version) {
-    log(`  › Bumping tauri.conf.json  ${tauriConf.version} → ${newVersion}`);
-    if (!dryRun) {
-      tauriConf.version = newVersion;
-      writeJson(tauriConfPath, tauriConf);
-    }
+  if ("version" in tauriConf) {
+    tauriConf.version = newVersion;
+    writeJson(tauriConfPath, tauriConf);
   }
 } catch {
-  // tauri.conf.json may not exist yet or have no version field — that's fine
+  // tauri.conf.json missing or unversioned — skip silently
 }
 
-// ── Commit version bump ───────────────────────────────────────────────────────
-
-await run(
-  `git add manager/package.json manager/src-tauri/tauri.conf.json && git commit -m "chore(manager): bump version to ${newVersion}"`,
-  `Commit version bump`,
-);
+await $`git add manager/package.json manager/src-tauri/tauri.conf.json`.quiet();
+await $`git commit -m ${"chore(manager): bump version to " + newVersion}`.quiet();
 
 // ── Tag & push ────────────────────────────────────────────────────────────────
 
-await run(
-  `git tag -a "${tag}" -m "Gradebook Manager ${newVersion}"`,
-  `Create annotated tag ${tag}`,
-);
-await run(
-  `git push origin HEAD "${tag}"`,
-  `Push commit + tag → triggers GitHub Actions build & release`,
-);
-
-// ── Done ──────────────────────────────────────────────────────────────────────
-
-if (dryRun) {
-  log(`\n✅ Dry run complete. No files were modified and nothing was pushed.`);
-} else {
-  log(`\n✅ Released manager-v${newVersion}!`);
-  log(`   GitHub Actions is now building macOS / Linux / Windows installers.`);
-  log(`   Watch: https://github.com/daulric-dev/gb/actions\n`);
+await git(["tag", "-a", tag, "-m", `Gradebook Manager ${newVersion}`]);
+const pushed = await $`git push ${REMOTE} HEAD ${tag}`.nothrow();
+if (pushed.exitCode !== 0) {
+  await $`git tag -d ${tag}`.quiet().nothrow();
+  await $`git reset --soft HEAD~1`.quiet().nothrow();
+  fail(`pushing ${tag} failed; the local tag and commit were removed.`);
 }
+
+console.log(`\nPushed ${tag}. The manager release workflow builds and publishes it:`);
+console.log("  Actions tab -> Gradebook Manager - Build & Release, then the repo's Releases page.");
