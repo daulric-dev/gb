@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ThemeProvider } from "@/theme/ThemeContext";
+import { InstancesProvider } from "@/hooks/InstancesContext";
 import { NavigationRail } from "@/components/m3/NavigationRail";
 import { TopAppBar } from "@/components/m3/TopAppBar";
 import { InstancesView } from "@/components/instances/InstancesView";
@@ -36,30 +37,32 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <div className="flex h-screen overflow-hidden bg-[var(--md-sys-color-background)] text-[var(--md-sys-color-on-background)]">
-        {/* Navigation Rail */}
-        <NavigationRail
-          items={NAV_ITEMS.map((item) => ({
-            id: item.id,
-            label: item.label,
-            icon: <item.icon size={20} />,
-          }))}
-          activeId={active}
-          onSelect={(id) => setActive(id as NavId)}
-        />
+      <InstancesProvider>
+        <div className="flex h-screen overflow-hidden bg-(--md-sys-color-background) text-(--md-sys-color-on-background)">
+          {/* Navigation Rail */}
+          <NavigationRail
+            items={NAV_ITEMS.map((item) => ({
+              id: item.id,
+              label: item.label,
+              icon: <item.icon size={20} />,
+            }))}
+            activeId={active}
+            onSelect={(id) => setActive(id as NavId)}
+          />
 
-        {/* Main content area */}
-        <div className="flex flex-col flex-1 min-w-0">
-          <TopAppBar title={meta.title} subtitle={meta.subtitle} />
+          {/* Main content area */}
+          <div className="flex flex-col flex-1 min-w-0">
+            <TopAppBar title={meta.title} subtitle={meta.subtitle} />
 
-          <main className="flex-1 overflow-y-auto p-6">
-            {active === "instances" && <InstancesView />}
-            {active === "env" && <EnvStudioView />}
-            {active === "releases" && <ReleasesView />}
-            {active === "ssh" && <SshView />}
-          </main>
+            <main className="flex-1 overflow-y-auto p-6">
+              {active === "instances" && <InstancesView />}
+              {active === "env" && <EnvStudioView />}
+              {active === "releases" && <ReleasesView />}
+              {active === "ssh" && <SshView />}
+            </main>
+          </div>
         </div>
-      </div>
+      </InstancesProvider>
     </ThemeProvider>
   );
 }

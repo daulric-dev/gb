@@ -309,12 +309,16 @@ pub fn ensure_backend_secrets(
 pub fn spawn_or_replace_pm2_service(
     name: &str,
     service_dir: &Path,
-    script_name: &str,
+    service: &str,
     bun_str: &str,
     logs: &Arc<Mutex<HashMap<String, VecDeque<String>>>>,
     log_key: &str,
 ) -> Result<(), String> {
-    if service_dir.ends_with("backend") || service_dir.join("src").join("main.ts").exists() {
+    let is_backend = service == "backend"
+        || service_dir.ends_with("backend")
+        || service_dir.join("src").join("main.ts").exists();
+
+    if is_backend {
         ensure_backend_secrets(service_dir, Some((logs, log_key)));
     }
 
@@ -332,29 +336,69 @@ pub fn spawn_or_replace_pm2_service(
     }
 
     let cwd_str = service_dir.to_string_lossy().to_string();
-    append_log_arc_pub(
-        logs,
-        log_key,
-        format!(
-            "[PM2] Spawning process: pm2 start {} --name {} --cwd {} --update-env -- run {}",
-            bun_str, name, cwd_str, script_name
-        ),
-    );
 
-    let start_args = [
-        "start",
-        bun_str,
-        "--name",
-        name,
-        "--cwd",
-        &cwd_str,
-        "--update-env",
-        "--",
-        "run",
-        script_name,
-    ];
+    if is_backend {
+        // Backend: run the compiled NestJS output via `node dist/main.js`
+        // This requires `nest build` (bun run build) to have been run first.
+        let dist_main = service_dir.join("dist").join("main.js");
+        if !dist_main.exists() {
+            return Err(format!(
+                "Backend dist/main.js not found at {:?}. Run a build first (nest build / bun run build).",
+                dist_main
+            ));
+        }
 
-    run_pm2(&start_args).map_err(|e| format!("PM2 start failed: {}", e))?;
+        append_log_arc_pub(
+            logs,
+            log_key,
+            format!(
+                "[PM2] Spawning backend process: pm2 start node --name {} --cwd {} --update-env -- dist/main.js",
+                name, cwd_str
+            ),
+        );
+
+        let start_args = [
+            "start",
+            "node",
+            "--name",
+            name,
+            "--cwd",
+            &cwd_str,
+            "--update-env",
+            "--",
+            "dist/main.js",
+        ];
+
+        run_pm2(&start_args).map_err(|e| format!("PM2 start failed: {}", e))?;
+    } else {
+        // Frontend (and any other service): `bun run start`
+        let script_name = get_service_script(service_dir, service);
+
+        append_log_arc_pub(
+            logs,
+            log_key,
+            format!(
+                "[PM2] Spawning process: pm2 start {} --name {} --cwd {} --update-env -- run {}",
+                bun_str, name, cwd_str, script_name
+            ),
+        );
+
+        let start_args = [
+            "start",
+            bun_str,
+            "--name",
+            name,
+            "--cwd",
+            &cwd_str,
+            "--update-env",
+            "--",
+            "run",
+            script_name,
+        ];
+
+        run_pm2(&start_args).map_err(|e| format!("PM2 start failed: {}", e))?;
+    }
+
     let _ = run_pm2(&["save", "--force"]);
 
     append_log_arc_pub(
@@ -710,19 +754,19 @@ pub async fn build_service(
                     );
                 }
 
-                // 1. Install dependencies first so newly added or modified packages don't fail the build
+                // 1. Install dependencies at the workspace root (turbo needs the full graph)
                 append_log_arc_pub(
                     &logs,
                     &log_key,
-                    format!("[Install] Ensuring dependencies are up-to-date in {}/ (`bun install`)...", service),
+                    format!("[Install] Ensuring workspace dependencies are up-to-date (`bun install`)..."),
                 );
 
                 if let Err(install_err) = run_bun_install(
                     &bun_cmd,
-                    &service_dir,
+                    root,
                     &logs,
                     &log_key,
-                    &format!("bun install in {}/", service),
+                    "bun install in workspace root",
                 ) {
                     if is_running {
                         append_log_arc_pub(
@@ -738,20 +782,23 @@ pub async fn build_service(
                         return Err(install_err);
                     }
                 }
-                append_log_arc_pub(&logs, &log_key, format!("[Install] ✓ Dependencies in {}/ are ready.", service));
+                append_log_arc_pub(&logs, &log_key, "[Install] ✓ Workspace dependencies are ready.".to_string());
 
-                // 2. Compile production assets
+                // 2. Compile production assets via turbo (runs from workspace root with filter)
                 append_log_arc_pub(
                     &logs,
                     &log_key,
-                    format!("[Build] Compiling production assets for {} (`bun run build`)...", service),
+                    format!("[Build] Compiling production assets for {} (`turbo run build --filter={}`)...", service, service),
                 );
 
                 let mut command = Command::new(&bun_cmd);
                 command
                     .arg("run")
+                    .arg("turbo")
+                    .arg("run")
                     .arg("build")
-                    .current_dir(&service_dir)
+                    .arg(format!("--filter={}", service))
+                    .current_dir(root)
                     .env("NODE_ENV", "production")
                     .env("LOCAL_PREVIEW", "true");
 
@@ -759,7 +806,7 @@ pub async fn build_service(
                     command,
                     &logs,
                     &log_key,
-                    &format!("bun run build in {}/", service),
+                    &format!("turbo run build --filter={}", service),
                 ) {
                     Ok(()) => {
                         append_log_arc_pub(
@@ -769,7 +816,6 @@ pub async fn build_service(
                         );
 
                         if is_running {
-                            let script_name = get_service_script(&service_dir, &service);
                             append_log_arc_pub(
                                 &logs,
                                 &log_key,
@@ -778,7 +824,7 @@ pub async fn build_service(
                                     name
                                 ),
                             );
-                            spawn_or_replace_pm2_service(&name, &service_dir, script_name, &bun_str, &logs, &log_key)?;
+                            spawn_or_replace_pm2_service(&name, &service_dir, &service, &bun_str, &logs, &log_key)?;
                             Ok(format!("{} built and seamlessly reloaded in PM2 (zero downtime).", service))
                         } else {
                             Ok(format!("{} production build completed successfully.", service))
@@ -805,6 +851,8 @@ pub async fn build_service(
                 let mut summary = Vec::new();
                 let mut had_error = false;
 
+                // Check running state and emit secrets for each service before building
+                let mut service_states: Vec<(&str, bool)> = Vec::new();
                 for name_str in ["backend", "frontend"] {
                     let service_dir = root.join(name_str);
                     let target_log_key = make_key(&instance_id, name_str);
@@ -814,10 +862,8 @@ pub async fn build_service(
                         if name_str == "backend" {
                             ensure_backend_secrets(&service_dir, Some((&logs, &target_log_key)));
                         }
-
                         let proc_name = pm2_name(&instance_id, name_str);
                         let is_running = is_pm2_online(&proc_name, Some(&service_dir));
-
                         if is_running {
                             append_log_arc_pub(
                                 &logs,
@@ -837,76 +883,82 @@ pub async fn build_service(
                                 ),
                             );
                         }
+                        service_states.push((name_str, is_running));
+                    }
+                }
 
-                        // Install dependencies first
-                        if let Err(err) = run_bun_install(
-                            &bun_cmd,
-                            &service_dir,
-                            &logs,
-                            &target_log_key,
-                            &format!("bun install in {}/", name_str),
-                        ) {
-                            had_error = true;
-                            if is_running {
+                // Single workspace-root install covers all packages in one pass
+                let all_log_key = make_key(&instance_id, "backend"); // log to backend key as primary
+                append_log_arc_pub(
+                    &logs,
+                    &all_log_key,
+                    "[Install] Ensuring workspace dependencies are up-to-date (`bun install`)...".to_string(),
+                );
+                if let Err(err) = run_bun_install(
+                    &bun_cmd,
+                    root,
+                    &logs,
+                    &all_log_key,
+                    "bun install in workspace root",
+                ) {
+                    had_error = true;
+                    summary.push(format!("Install: ✗ bun install failed ({})", err));
+                    // If install fails, keep all running services alive and bail
+                    return if had_error { Err(summary.join(" | ")) } else { Ok(summary.join(" | ")) };
+                }
+                append_log_arc_pub(&logs, &all_log_key, "[Install] ✓ Workspace dependencies are ready.".to_string());
+
+                // Single turbo build — turbo runs backend + frontend in parallel with caching
+                append_log_arc_pub(
+                    &logs,
+                    &all_log_key,
+                    "[Build] Building all services (`turbo run build`)...".to_string(),
+                );
+
+                let mut command = Command::new(&bun_cmd);
+                command
+                    .arg("run")
+                    .arg("turbo")
+                    .arg("run")
+                    .arg("build")
+                    .current_dir(root)
+                    .env("NODE_ENV", "production")
+                    .env("LOCAL_PREVIEW", "true");
+
+                match wait_for_command(command, &logs, &all_log_key, "turbo run build") {
+                    Ok(()) => {
+                        append_log_arc_pub(&logs, &all_log_key, "[Build] ✓ All services built successfully.".to_string());
+
+                        // Reload any services that were running before the build
+                        for (name_str, is_running) in &service_states {
+                            let service_dir = root.join(name_str);
+                            let proc_name = pm2_name(&instance_id, name_str);
+                            let target_log_key = make_key(&instance_id, name_str);
+                            if *is_running {
+                                let _ = spawn_or_replace_pm2_service(&proc_name, &service_dir, name_str, &bun_str, &logs, &target_log_key);
+                                summary.push(format!("{}: ✓ Built & Reloaded", name_str));
+                            } else {
+                                summary.push(format!("{}: ✓ Built", name_str));
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        had_error = true;
+                        for (name_str, is_running) in &service_states {
+                            let target_log_key = make_key(&instance_id, name_str);
+                            let proc_name = pm2_name(&instance_id, name_str);
+                            if *is_running {
                                 append_log_arc_pub(
                                     &logs,
                                     &target_log_key,
                                     format!(
-                                        "[Safety] ⚠️ Package installation failed for '{}'. Running process kept online.",
+                                        "[Safety] ⚠️ Build failed for '{}'. Running process kept online.",
                                         proc_name
                                     ),
                                 );
-                                summary.push(format!("{}: ✗ bun install failed (kept online)", name_str));
+                                summary.push(format!("{}: ✗ Build failed (service kept online)", name_str));
                             } else {
-                                summary.push(format!("{}: ✗ bun install failed ({})", name_str, err));
-                            }
-                            continue;
-                        }
-
-                        let mut command = Command::new(&bun_cmd);
-                        command
-                            .arg("run")
-                            .arg("build")
-                            .current_dir(&service_dir)
-                            .env("NODE_ENV", "production")
-                            .env("LOCAL_PREVIEW", "true");
-
-                        match wait_for_command(
-                            command,
-                            &logs,
-                            &target_log_key,
-                            &format!("bun run build in {}/", name_str),
-                        ) {
-                            Ok(()) => {
-                                append_log_arc_pub(
-                                    &logs,
-                                    &target_log_key,
-                                    format!("[Build] ✓ {} built successfully.", name_str),
-                                );
-
-                                if is_running {
-                                    let script = get_service_script(&service_dir, name_str);
-                                    let _ = spawn_or_replace_pm2_service(&proc_name, &service_dir, script, &bun_str, &logs, &target_log_key);
-                                    summary.push(format!("{}: ✓ Built & Reloaded", name_str));
-                                } else {
-                                    summary.push(format!("{}: ✓ Built", name_str));
-                                }
-                            }
-                            Err(error) => {
-                                had_error = true;
-                                if is_running {
-                                    append_log_arc_pub(
-                                        &logs,
-                                        &target_log_key,
-                                        format!(
-                                            "[Safety] ⚠️ Build failed for '{}'. Running process kept online.",
-                                            proc_name
-                                        ),
-                                    );
-                                    summary.push(format!("{}: ✗ Build failed (service kept online)", name_str));
-                                } else {
-                                    summary.push(format!("{}: ✗ Build failed ({})", name_str, error));
-                                }
+                                summary.push(format!("{}: ✗ Build failed ({})", name_str, error));
                             }
                         }
                     }
@@ -970,7 +1022,6 @@ pub async fn start_service(
             return Err(format!("Service directory {:?} does not exist", service_dir));
         }
 
-        let script_name = get_service_script(&service_dir, &service);
         let name = pm2_name(&instance_id, &service);
         let log_key = make_key(&instance_id, &service);
 
@@ -982,9 +1033,12 @@ pub async fn start_service(
 
         let is_running = is_pm2_online(&name, Some(&service_dir));
 
-        // Build first if requested by user, or automatically for frontend if .next is missing
+        // Build first if requested by user, or automatically when compiled assets are missing:
+        //   - frontend: if .next/ is absent
+        //   - backend:  if dist/main.js is absent
         let do_build = build_first.unwrap_or(false)
-            || (service == "frontend" && !service_dir.join(".next").exists());
+            || (service == "frontend" && !service_dir.join(".next").exists())
+            || (service == "backend" && !service_dir.join("dist").join("main.js").exists());
 
         if do_build {
             if is_running {
@@ -1007,19 +1061,19 @@ pub async fn start_service(
                 );
             }
 
-            // 1. Install dependencies first so newly added or modified packages don't fail the build
+            // 1. Install dependencies at the workspace root
             append_log_arc_pub(
                 &logs,
                 &log_key,
-                format!("[Install] Ensuring dependencies are up-to-date in {}/ (`bun install`)...", service),
+                "[Install] Ensuring workspace dependencies are up-to-date (`bun install`)...".to_string(),
             );
 
             if let Err(install_err) = run_bun_install(
                 &bun_cmd,
-                &service_dir,
+                root,
                 &logs,
                 &log_key,
-                &format!("bun install in {}/", service),
+                "bun install in workspace root",
             ) {
                 if is_running {
                     append_log_arc_pub(
@@ -1035,23 +1089,26 @@ pub async fn start_service(
                     return Err(install_err);
                 }
             }
-            append_log_arc_pub(&logs, &log_key, format!("[Install] ✓ Dependencies in {}/ are ready.", service));
+            append_log_arc_pub(&logs, &log_key, "[Install] ✓ Workspace dependencies are ready.".to_string());
 
-            // 2. Compile production assets
+            // 2. Compile production assets via turbo (run from workspace root with filter)
             append_log_arc_pub(
                 &logs,
                 &log_key,
                 format!(
-                    "[Build] Compiling production assets for {} (`bun run build`)...",
-                    service
+                    "[Build] Compiling production assets for {} (`turbo run build --filter={}`)...",
+                    service, service
                 ),
             );
 
             let mut build_cmd = Command::new(&bun_cmd);
             build_cmd
                 .arg("run")
+                .arg("turbo")
+                .arg("run")
                 .arg("build")
-                .current_dir(&service_dir)
+                .arg(format!("--filter={}", service))
+                .current_dir(root)
                 .env("NODE_ENV", "production")
                 .env("LOCAL_PREVIEW", "true");
 
@@ -1059,7 +1116,7 @@ pub async fn start_service(
                 build_cmd,
                 &logs,
                 &log_key,
-                &format!("bun run build in {}/", service),
+                &format!("turbo run build --filter={}", service),
             ) {
                 Ok(()) => {
                     append_log_arc_pub(
@@ -1100,13 +1157,13 @@ pub async fn start_service(
                 &logs,
                 &log_key,
                 format!(
-                    "[PM2] Starting production service '{}' ({}) via `bun run {}` in {:?}...",
-                    name, service, script_name, service_dir
+                    "[PM2] Starting production service '{}' ({}) in {:?}...",
+                    name, service, service_dir
                 ),
             );
         }
 
-        spawn_or_replace_pm2_service(&name, &service_dir, script_name, &bun_str, &logs, &log_key)?;
+        spawn_or_replace_pm2_service(&name, &service_dir, &service, &bun_str, &logs, &log_key)?;
 
         Ok(format!("{} online via PM2 ({})", service, name))
     })
