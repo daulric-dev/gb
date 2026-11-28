@@ -25,6 +25,8 @@ type Bump = (typeof BUMPS)[number];
 
 const pkgPath = resolve(import.meta.dir, "../package.json");
 const tauriConfPath = resolve(import.meta.dir, "../src-tauri/tauri.conf.json");
+// All git commands must run from the repo root (one level above manager/)
+const repoRoot = resolve(import.meta.dir, "../../");
 
 function fail(message: string): never {
   console.error(`release: ${message}`);
@@ -52,7 +54,7 @@ function bump([major, minor, patch]: Version, part: Bump): Version {
 const format = (v: Version) => v.join(".");
 
 async function git(args: string[]): Promise<string> {
-  const res = await $`git ${args}`.quiet().nothrow();
+  const res = await $`git -C ${repoRoot} ${args}`.quiet().nothrow();
   if (res.exitCode !== 0) {
     fail(`git ${args.join(" ")} failed:\n${res.stderr.toString().trim()}`);
   }
@@ -142,16 +144,16 @@ try {
   // tauri.conf.json missing or unversioned — skip silently
 }
 
-await $`git add manager/package.json manager/src-tauri/tauri.conf.json`.quiet();
-await $`git commit -m ${"chore(manager): bump version to " + newVersion}`.quiet();
+await $`git -C ${repoRoot} add manager/package.json manager/src-tauri/tauri.conf.json`.quiet();
+await $`git -C ${repoRoot} commit -m ${"chore(manager): bump version to " + newVersion}`.quiet();
 
 // ── Tag & push ────────────────────────────────────────────────────────────────
 
 await git(["tag", "-a", tag, "-m", `Gradebook Manager ${newVersion}`]);
-const pushed = await $`git push ${REMOTE} HEAD ${tag}`.nothrow();
+const pushed = await $`git -C ${repoRoot} push ${REMOTE} HEAD ${tag}`.nothrow();
 if (pushed.exitCode !== 0) {
-  await $`git tag -d ${tag}`.quiet().nothrow();
-  await $`git reset --soft HEAD~1`.quiet().nothrow();
+  await $`git -C ${repoRoot} tag -d ${tag}`.quiet().nothrow();
+  await $`git -C ${repoRoot} reset --soft HEAD~1`.quiet().nothrow();
   fail(`pushing ${tag} failed; the local tag and commit were removed.`);
 }
 
